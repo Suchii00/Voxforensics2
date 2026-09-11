@@ -1,134 +1,338 @@
-import { useEffect, useRef } from 'react';
+import { useRef, useMemo, useCallback } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 
-export default function LiveBackground() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let animationId: number;
-    let time = 0;
-
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    resize();
-    window.addEventListener('resize', resize);
-
-    // Particles
-    const particles: { x: number; y: number; vx: number; vy: number; size: number; alpha: number; color: string }[] = [];
-    for (let i = 0; i < 80; i++) {
-      particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: (Math.random() - 0.5) * 0.5,
-        size: Math.random() * 2 + 0.5,
-        alpha: Math.random() * 0.5 + 0.1,
-        color: Math.random() > 0.5 ? '#00f0ff' : '#7b2ff7'
-      });
+// Generate head-shaped point cloud
+function generateHeadPoints(count: number): Float32Array {
+  const positions = new Float32Array(count * 3);
+  
+  for (let i = 0; i < count; i++) {
+    const i3 = i * 3;
+    
+    // Use spherical coordinates with deformation for head shape
+    const phi = Math.acos(2 * Math.random() - 1); // 0 to PI
+    const theta = Math.random() * Math.PI * 2; // 0 to 2PI
+    
+    // Head shape deformation
+    let r = 1.0;
+    
+    // Flatten top and bottom (skull shape)
+    const y = Math.cos(phi);
+    if (y > 0.7) r *= 0.85 - (y - 0.7) * 0.3;
+    if (y < -0.5) r *= 0.7 + (y + 0.5) * 0.2;
+    
+    // Narrow the jaw area
+    if (y < -0.2 && y > -0.8) {
+      const jawFactor = 1 - Math.abs(y + 0.5) * 0.3;
+      r *= jawFactor;
     }
+    
+    // Forehead bulge
+    if (y > 0.3 && y < 0.7) {
+      r *= 1.05;
+    }
+    
+    // Nose protrusion (front center)
+    const x = Math.sin(phi) * Math.cos(theta);
+    const z = Math.sin(phi) * Math.sin(theta);
+    
+    if (z > 0.7 && Math.abs(x) < 0.15 && y > -0.2 && y < 0.2) {
+      r *= 1.15;
+    }
+    
+    // Eye socket indentations
+    if (z > 0.5 && Math.abs(x) > 0.15 && Math.abs(x) < 0.4 && y > 0 && y < 0.3) {
+      r *= 0.92;
+    }
+    
+    // Add some noise for organic feel
+    r += (Math.random() - 0.5) * 0.02;
+    
+    positions[i3] = x * r * 1.2;
+    positions[i3 + 1] = y * r * 1.5;
+    positions[i3 + 2] = z * r * 1.0;
+  }
+  
+  return positions;
+}
 
-    const animate = () => {
-      time += 0.005;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Draw grid
-      ctx.strokeStyle = 'rgba(0, 240, 255, 0.03)';
-      ctx.lineWidth = 0.5;
-      const gridSize = 60;
-      for (let x = 0; x < canvas.width; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
-        ctx.stroke();
-      }
-      for (let y = 0; y < canvas.height; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
-      }
-
-      // Draw wave lines
-      for (let w = 0; w < 3; w++) {
-        ctx.beginPath();
-        ctx.strokeStyle = w === 0 ? 'rgba(0, 240, 255, 0.08)' : w === 1 ? 'rgba(123, 47, 247, 0.06)' : 'rgba(255, 45, 85, 0.04)';
-        ctx.lineWidth = 1.5;
-        for (let x = 0; x < canvas.width; x += 2) {
-          const y = canvas.height * (0.3 + w * 0.2) + 
-            Math.sin(x * 0.003 + time * (1 + w * 0.5)) * 50 +
-            Math.sin(x * 0.007 + time * 2) * 20;
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }
-
-      // Draw and update particles
-      particles.forEach((p, i) => {
-        p.x += p.vx;
-        p.y += p.vy;
-
-        if (p.x < 0) p.x = canvas.width;
-        if (p.x > canvas.width) p.x = 0;
-        if (p.y < 0) p.y = canvas.height;
-        if (p.y > canvas.height) p.y = 0;
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = p.color;
-        ctx.globalAlpha = p.alpha * (0.5 + 0.5 * Math.sin(time * 2 + i));
-        ctx.fill();
-        ctx.globalAlpha = 1;
-
-        // Connect nearby particles
-        particles.forEach((p2, j) => {
-          if (j <= i) return;
-          const dx = p.x - p2.x;
-          const dy = p.y - p2.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 120) {
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(p2.x, p2.y);
-            ctx.strokeStyle = `rgba(0, 240, 255, ${0.05 * (1 - dist / 120)})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        });
-      });
-
-      // Radial gradient overlay
-      const gradient = ctx.createRadialGradient(
-        canvas.width / 2, canvas.height / 2, 0,
-        canvas.width / 2, canvas.height / 2, canvas.width * 0.7
-      );
-      gradient.addColorStop(0, 'rgba(0, 240, 255, 0.02)');
-      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      animationId = requestAnimationFrame(animate);
-    };
-
-    animate();
-
-    return () => {
-      cancelAnimationFrame(animationId);
-      window.removeEventListener('resize', resize);
-    };
+// Face Point Cloud Component
+function FacePointCloud() {
+  const pointsRef = useRef<THREE.Points>(null);
+  const mouseRef = useRef({ x: 0, y: 0 });
+  const { viewport } = useThree();
+  
+  const { positions, colors } = useMemo(() => {
+    const count = 3000;
+    const pos = generateHeadPoints(count);
+    const col = new Float32Array(count * 3);
+    
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const y = pos[i3 + 1];
+      // Gradient from cyan at top to purple at bottom
+      const t = (y + 1.5) / 3;
+      col[i3] = 0.3 * (1 - t) + 0 * t;      // R
+      col[i3 + 1] = 0.95 * t + 0 * (1 - t);  // G
+      col[i3 + 2] = 1 * (1 - t) + 1 * t;      // B
+    }
+    
+    return { positions: pos, colors: col };
   }, []);
 
+  const handlePointerMove = useCallback((e: { clientX: number; clientY: number }) => {
+    mouseRef.current.x = (e.clientX / window.innerWidth - 0.5) * 2;
+    mouseRef.current.y = (e.clientY / window.innerHeight - 0.5) * 2;
+  }, []);
+
+  useFrame((state) => {
+    if (!pointsRef.current) return;
+    
+    const time = state.clock.elapsedTime;
+    
+    // Subtle rotation following mouse
+    const targetRotY = mouseRef.current.x * 0.3;
+    const targetRotX = mouseRef.current.y * 0.15;
+    pointsRef.current.rotation.y += (targetRotY - pointsRef.current.rotation.y) * 0.02;
+    pointsRef.current.rotation.x += (targetRotX - pointsRef.current.rotation.x) * 0.02;
+    
+    // Gentle idle rotation
+    pointsRef.current.rotation.y += 0.001;
+    
+    // Breathing effect - subtle scale pulse
+    const breathe = 1 + Math.sin(time * 0.5) * 0.02;
+    pointsRef.current.scale.set(breathe, breathe, breathe);
+    
+    // Animate individual particles
+    const posArray = pointsRef.current.geometry.attributes.position.array as Float32Array;
+    for (let i = 0; i < posArray.length; i += 3) {
+      const origX = positions[i];
+      const origY = positions[i + 1];
+      const origZ = positions[i + 2];
+      
+      // Subtle wave displacement
+      const wave = Math.sin(time * 2 + origY * 3) * 0.01;
+      posArray[i] = origX + wave;
+      posArray[i + 1] = origY + Math.sin(time * 1.5 + origX * 2) * 0.008;
+      posArray[i + 2] = origZ + Math.cos(time * 1.8 + origY * 2) * 0.005;
+    }
+    pointsRef.current.geometry.attributes.position.needsUpdate = true;
+  });
+
+  // Listen for mouse movement
+  useMemo(() => {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pointermove', handlePointerMove);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('pointermove', handlePointerMove);
+      }
+    };
+  }, [handlePointerMove]);
+
   return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 z-0 pointer-events-none"
-      style={{ background: 'linear-gradient(135deg, #0a0a1a 0%, #0d0d2b 50%, #0a0a1a 100%)' }}
-    />
+    <points ref={pointsRef} position={[0, 0, 0]}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={positions.length / 3}
+          array={positions}
+          itemSize={3}
+        />
+        <bufferAttribute
+          attach="attributes-color"
+          count={colors.length / 3}
+          array={colors}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        size={0.015}
+        vertexColors
+        transparent
+        opacity={0.7}
+        sizeAttenuation
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+      />
+    </points>
+  );
+}
+
+// Animated Wave Lines
+function WaveLines() {
+  const groupRef = useRef<THREE.Group>(null);
+  const linesArray = useRef<THREE.Line[]>([]);
+  
+  const lineData = useMemo(() => {
+    const numLines = 5;
+    const pointsPerLine = 200;
+    const data: { positions: Float32Array; color: string }[] = [];
+    const colors = ['#00F2FE', '#4FACFE', '#7F00FF', '#E100FF', '#00F2FE'];
+    
+    for (let l = 0; l < numLines; l++) {
+      const positions = new Float32Array(pointsPerLine * 3);
+      for (let i = 0; i < pointsPerLine; i++) {
+        positions[i * 3] = (i / pointsPerLine - 0.5) * 12;
+        positions[i * 3 + 1] = 0;
+        positions[i * 3 + 2] = (l - numLines / 2) * 0.8;
+      }
+      data.push({ positions, color: colors[l] });
+    }
+    
+    return data;
+  }, []);
+
+  useFrame((state) => {
+    const time = state.clock.elapsedTime;
+    
+    linesArray.current.forEach((lineObj, lineIndex) => {
+      if (!lineObj) return;
+      const posArray = lineObj.geometry.attributes.position.array as Float32Array;
+      const pointsPerLine = posArray.length / 3;
+      
+      for (let i = 0; i < pointsPerLine; i++) {
+        const x = posArray[i * 3];
+        const freq1 = 0.5 + lineIndex * 0.1;
+        const freq2 = 1.2 + lineIndex * 0.15;
+        const amplitude = 0.3 - lineIndex * 0.04;
+        
+        posArray[i * 3 + 1] = 
+          Math.sin(x * freq1 + time * (0.5 + lineIndex * 0.2)) * amplitude +
+          Math.sin(x * freq2 + time * 0.8) * amplitude * 0.5;
+      }
+      lineObj.geometry.attributes.position.needsUpdate = true;
+    });
+  });
+
+  return (
+    <group ref={groupRef} position={[0, -2, -2]}>
+      {lineData.map((data, i) => (
+        <primitive
+          key={i}
+          object={(() => {
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
+            const mat = new THREE.LineBasicMaterial({
+              color: data.color,
+              transparent: true,
+              opacity: 0.3 - i * 0.04,
+              blending: THREE.AdditiveBlending,
+            });
+            const lineObj = new THREE.Line(geom, mat);
+            linesArray.current[i] = lineObj;
+            return lineObj;
+          })()}
+        />
+      ))}
+    </group>
+  );
+}
+
+// Floating Particles
+function FloatingParticles() {
+  const particlesRef = useRef<THREE.Points>(null);
+  
+  const { positions, velocities } = useMemo(() => {
+    const count = 200;
+    const pos = new Float32Array(count * 3);
+    const vel = new Float32Array(count * 3);
+    
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 15;
+      pos[i * 3 + 1] = (Math.random() - 0.5) * 10;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 8 - 2;
+      
+      vel[i * 3] = (Math.random() - 0.5) * 0.005;
+      vel[i * 3 + 1] = (Math.random() - 0.5) * 0.005;
+      vel[i * 3 + 2] = (Math.random() - 0.5) * 0.002;
+    }
+    
+    return { positions: pos, velocities: vel };
+  }, []);
+
+  useFrame(() => {
+    if (!particlesRef.current) return;
+    const posArray = particlesRef.current.geometry.attributes.position.array as Float32Array;
+    
+    for (let i = 0; i < posArray.length; i += 3) {
+      posArray[i] += velocities[i];
+      posArray[i + 1] += velocities[i + 1];
+      posArray[i + 2] += velocities[i + 2];
+      
+      // Wrap around
+      if (posArray[i] > 7.5) posArray[i] = -7.5;
+      if (posArray[i] < -7.5) posArray[i] = 7.5;
+      if (posArray[i + 1] > 5) posArray[i + 1] = -5;
+      if (posArray[i + 1] < -5) posArray[i + 1] = 5;
+    }
+    particlesRef.current.geometry.attributes.position.needsUpdate = true;
+  });
+
+  return (
+    <points ref={particlesRef}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={positions.length / 3}
+          array={positions}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        size={0.03}
+        color="#00F2FE"
+        transparent
+        opacity={0.4}
+        sizeAttenuation
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+      />
+    </points>
+  );
+}
+
+// Scene Component
+function Scene() {
+  return (
+    <>
+      <ambientLight intensity={0.1} />
+      <FacePointCloud />
+      <WaveLines />
+      <FloatingParticles />
+    </>
+  );
+}
+
+export default function LiveBackground() {
+  return (
+    <div className="fixed inset-0 z-0" style={{ background: '#030712' }}>
+      {/* CSS Glow Effects */}
+      <div className="bg-glow-purple" style={{ top: '-10%', right: '-5%' }} />
+      <div className="bg-glow-cyan" style={{ bottom: '-10%', left: '-5%' }} />
+      <div 
+        className="bg-glow-purple" 
+        style={{ 
+          top: '40%', 
+          left: '30%', 
+          width: '400px', 
+          height: '400px',
+          opacity: 0.5 
+        }} 
+      />
+      
+      {/* Three.js Canvas */}
+      <Canvas
+        camera={{ position: [0, 0, 4], fov: 60 }}
+        style={{ position: 'absolute', inset: 0 }}
+        gl={{ antialias: true, alpha: true }}
+      >
+        <Scene />
+      </Canvas>
+      
+      {/* Grid Overlay */}
+      <div className="absolute inset-0 grid-pattern opacity-30" />
+    </div>
   );
 }
