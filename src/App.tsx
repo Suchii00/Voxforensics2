@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import LiveBackground from './components/LiveBackground';
+import E2ETestPanel from './components/E2ETestPanel';
 import { analyzeAudio, getScanHistory, saveScanToHistory, clearHistory, AnalysisResult, ScanRecord } from './utils/analysis';
 import jsPDF from 'jspdf';
 
@@ -20,6 +21,7 @@ export default function App() {
   const [showReport, setShowReport] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState<string>('');
   const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
+  const [showTestPanel, setShowTestPanel] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -637,6 +639,12 @@ export default function App() {
             <span className="feature-tag">🔬 Spectrogram</span>
             <span className="feature-tag">🤖 AI Detection</span>
             <span className="feature-tag">📋 Reports</span>
+            <button 
+              onClick={() => setShowTestPanel(true)} 
+              className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors"
+            >
+              🧪 E2E Tests
+            </button>
           </div>
         </header>
 
@@ -1128,6 +1136,9 @@ export default function App() {
           <p className="mt-1 text-xs text-gray-700">Powered by VoxNet Ensemble Model | For forensic analysis purposes</p>
         </footer>
       </div>
+
+      {/* E2E Test Panel */}
+      {showTestPanel && <E2ETestPanel onClose={() => setShowTestPanel(false)} />}
     </div>
   );
 }
