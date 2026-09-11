@@ -575,12 +575,39 @@ export default function App() {
             AI-Powered Deepfake Audio Detection & Forensic Analysis
           </p>
           <div className="flex justify-center gap-3 flex-wrap">
-            <span className="feature-tag">🎙️ Recording</span>
-            <span className="feature-tag">📁 Upload</span>
-            <span className="feature-tag">🌊 Waveform</span>
-            <span className="feature-tag">🔬 Spectrogram</span>
-            <span className="feature-tag">🤖 AI Detection</span>
-            <span className="feature-tag">📋 Reports</span>
+            <button onClick={startRecording} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
+              🎙️ Recording
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
+              📁 Upload
+            </button>
+            <button onClick={() => {
+              if (waveformData.length > 0) {
+                const el = document.querySelector('.waveform-container');
+                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
+              🌊 Waveform
+            </button>
+            <button onClick={() => {
+              if (spectrogramData.length > 0) {
+                const el = document.querySelector('.spectrogram-container');
+                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
+              🔬 Spectrogram
+            </button>
+            <button onClick={() => {
+              if (currentResult) {
+                const el = document.querySelector('.glass-card.border-l-4');
+                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
+              🤖 AI Detection
+            </button>
+            <button onClick={() => setShowReport(!showReport)} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
+              📋 Reports
+            </button>
             <button 
               onClick={() => setShowTestPanel(true)} 
               className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors"
@@ -909,7 +936,7 @@ export default function App() {
                 <div className="space-y-3">
                   {history.map((record) => (
                     <div key={record.id} className="batch-item flex items-center justify-between flex-wrap gap-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-1">
                         <span className={`w-3 h-3 rounded-full ${record.result.isDeepfake ? 'bg-[#FF0055]' : 'bg-[#00FF88]'}`}
                           style={{ boxShadow: `0 0 8px ${record.result.isDeepfake ? '#FF0055' : '#00FF88'}` }}></span>
                         <div>
@@ -922,6 +949,16 @@ export default function App() {
                         <span style={{ color: record.result.isDeepfake ? '#FF0055' : '#00FF88' }}>
                           {(record.result.confidence * 100).toFixed(0)}% {record.result.isDeepfake ? 'Fake' : 'Real'}
                         </span>
+                        <button
+                          onClick={() => {
+                            const newHistory = history.filter(h => h.id !== record.id);
+                            setHistory(newHistory);
+                            localStorage.setItem('voxforensics_history', JSON.stringify(newHistory));
+                          }}
+                          className="ml-2 px-2 py-1 rounded text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
+                        >
+                          🗑️ Delete
+                        </button>
                       </div>
                     </div>
                   ))}
