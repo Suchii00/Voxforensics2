@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import LiveBackground from './components/LiveBackground';
 import E2ETestPanel from './components/E2ETestPanel';
+import SecurityScanner, { SecurityScanResult } from './components/SecurityScanner';
+import ConsentModal, { hasGivenConsent, revokeConsent } from './components/ConsentModal';
 import { analyzeAudio, getScanHistory, saveScanToHistory, clearHistory, AnalysisResult, ScanRecord } from './utils/analysis';
 import jsPDF from 'jspdf';
 
@@ -22,6 +24,9 @@ export default function App() {
   const [recordingStatus, setRecordingStatus] = useState<string>('');
   const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
   const [showTestPanel, setShowTestPanel] = useState(false);
+  const [hasConsent, setHasConsent] = useState(hasGivenConsent());
+  const [securityScanResult, setSecurityScanResult] = useState<SecurityScanResult | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -172,8 +177,22 @@ export default function App() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) processAudioFile(file);
+    if (file) {
+      setPendingFile(file);
+      setSecurityScanResult(null);
+    }
     e.target.value = '';
+  };
+
+  const handleSecurityScanComplete = (result: SecurityScanResult) => {
+    setSecurityScanResult(result);
+    if (result.isValid && pendingFile) {
+      // Auto-process after a short delay to show scan results
+      setTimeout(() => {
+        processAudioFile(pendingFile);
+        setPendingFile(null);
+      }, 1500);
+    }
   };
 
   const handleSampleReal = () => {
@@ -563,6 +582,22 @@ export default function App() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Show consent modal if not given
+  if (!hasConsent) {
+    return (
+      <>
+        <LiveBackground />
+        <ConsentModal
+          onAccept={() => setHasConsent(true)}
+          onDecline={() => {
+            // Show a message that consent is required
+            alert('You must accept the consent agreement to use VoxForensics. Please reload the page to try again.');
+          }}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="relative min-h-screen">
       <LiveBackground />
@@ -701,6 +736,32 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Security Scanner */}
+              {pendingFile && (
+                <div className="mt-6">
+                  <SecurityScanner 
+                    file={pendingFile} 
+                    onScanComplete={handleSecurityScanComplete}
+                  />
+                  {securityScanResult && !securityScanResult.isValid && (
+                    <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                      <p className="text-sm text-red-400 font-semibold mb-2">
+                        ⚠️ File cannot be processed due to security issues
+                      </p>
+                      <button
+                        onClick={() => {
+                          setPendingFile(null);
+                          setSecurityScanResult(null);
+                        }}
+                        className="neon-btn neon-btn-danger text-xs"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Recording Waveform */}
               {isRecording && (
@@ -1030,10 +1091,60 @@ export default function App() {
           </div>
         )}
 
+        {/* Privacy & Security Info */}
+        <div className="mt-12 glass-card p-6">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            🔒 Privacy & Security Information
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+              <p className="font-semibold text-cyan-300 mb-2">📦 Data Storage</p>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• All processing occurs in your browser</li>
+                <li>• No files are uploaded to servers</li>
+                <li>• Analysis history stored in localStorage</li>
+                <li>• Data never leaves your device</li>
+              </ul>
+            </div>
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+              <p className="font-semibold text-green-300 mb-2">🛡️ Security</p>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• Files scanned for malware before processing</li>
+                <li>• File type and size validation</li>
+                <li>• Signature verification for audio files</li>
+                <li>• No external network requests</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => {
+                if (confirm('Are you sure you want to revoke consent? This will clear all your data and require you to accept the consent agreement again.')) {
+                  revokeConsent();
+                  clearHistory();
+                  setHistory([]);
+                  setHasConsent(false);
+                }
+              }}
+              className="neon-btn neon-btn-danger text-xs"
+            >
+              🔐 Revoke Consent & Clear Data
+            </button>
+            <button
+              onClick={() => {
+                alert(`📊 Storage Usage:\n\n• Analysis History: ${(JSON.stringify(history).length / 1024).toFixed(2)} KB\n• Consent Data: ${(localStorage.getItem('voxforensics_consent')?.length || 0) / 1024} KB\n• Total localStorage: ${(Object.values(localStorage).join('').length / 1024).toFixed(2)} KB\n\n📁 Uploaded Files: Not stored (processed in-memory only)\n🎙️ Recordings: Not stored (processed immediately)\n\nAll data is stored locally in your browser and never transmitted to external servers.`);
+              }}
+              className="neon-btn text-xs"
+            >
+              📊 View Storage Details
+            </button>
+          </div>
+        </div>
+
         {/* Footer */}
-        <footer className="mt-16 text-center pb-8">
+        <footer className="mt-8 text-center pb-8">
           <p className="text-gray-500 text-sm">VoxForensics v3.2.1 — AI Deepfake Audio Detection System</p>
-          <p className="mt-1 text-xs text-gray-700">Powered by VoxNet Ensemble Model | For forensic analysis purposes</p>
+          <p className="mt-1 text-xs text-gray-700">Powered by VoxNet Ensemble Model | GDPR & BIPA Compliant | Client-Side Processing Only</p>
         </footer>
       </div>
 
