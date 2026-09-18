@@ -3,6 +3,9 @@ import LiveBackground from './components/LiveBackground';
 import E2ETestPanel from './components/E2ETestPanel';
 import SecurityScanner, { SecurityScanResult } from './components/SecurityScanner';
 import ConsentModal, { hasGivenConsent, revokeConsent } from './components/ConsentModal';
+import AuthSystem, { getCurrentUser, logout, User } from './components/AuthSystem';
+import AdminDashboard from './components/AdminDashboard';
+import UserDashboard from './components/UserDashboard';
 import { analyzeAudio, getScanHistory, saveScanToHistory, clearHistory, AnalysisResult, ScanRecord } from './utils/analysis';
 import jsPDF from 'jspdf';
 
@@ -27,6 +30,10 @@ export default function App() {
   const [hasConsent, setHasConsent] = useState(hasGivenConsent());
   const [securityScanResult, setSecurityScanResult] = useState<SecurityScanResult | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  
+  // Authentication state
+  const [currentUser, setCurrentUser] = useState<User | null>(getCurrentUser());
+  const [showDashboard, setShowDashboard] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -582,6 +589,41 @@ export default function App() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Authentication handlers
+  const handleLogin = (user: User) => {
+    setCurrentUser(user);
+  };
+
+  const handleLogout = () => {
+    logout();
+    setCurrentUser(null);
+    setShowDashboard(false);
+  };
+
+  const handleBackToApp = () => {
+    setShowDashboard(false);
+  };
+
+  // Show login screen if not authenticated
+  if (!currentUser) {
+    return (
+      <>
+        <LiveBackground />
+        <AuthSystem onLogin={handleLogin} onLogout={handleLogout} />
+      </>
+    );
+  }
+
+  // Show admin dashboard for admin users
+  if (currentUser.role === 'admin' && showDashboard) {
+    return <AdminDashboard currentUser={currentUser} onLogout={handleLogout} />;
+  }
+
+  // Show user dashboard for regular users
+  if (showDashboard) {
+    return <UserDashboard currentUser={currentUser} onLogout={handleLogout} onBackToApp={handleBackToApp} />;
+  }
+
   // Show consent modal if not given
   if (!hasConsent) {
     return (
@@ -603,6 +645,42 @@ export default function App() {
       <LiveBackground />
       
       <div className="relative z-10 max-w-7xl mx-auto px-4 py-8 md:py-12">
+        {/* User Info Bar */}
+        {currentUser && (
+          <div className="flex items-center justify-between mb-6 p-4 rounded-xl glass-card">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center text-white font-bold">
+                {currentUser.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">{currentUser.name}</p>
+                <p className="text-xs text-gray-400">{currentUser.email}</p>
+              </div>
+              <span className={`px-2 py-1 rounded-full text-xs ${
+                currentUser.role === 'admin' 
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
+                  : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+              }`}>
+                {currentUser.role}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowDashboard(true)} 
+                className="neon-btn text-xs py-2 px-4"
+              >
+                👤 Dashboard
+              </button>
+              <button 
+                onClick={handleLogout} 
+                className="neon-btn neon-btn-danger text-xs py-2 px-4"
+              >
+                🚪 Logout
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Header with 3D Metallic Title */}
         <header className="text-center mb-12">
           <h1 className="hero-title mb-4">VoxForensics</h1>
