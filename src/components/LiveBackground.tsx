@@ -307,7 +307,28 @@ function Scene() {
 
 export default function LiveBackground() {
   return (
-    <div className="fixed inset-0 z-0" style={{ background: '#030712' }}>
+    <div className="fixed inset-0 z-0" style={{ background: '#050914' }}>
+      {/* AI Face Background Image with Masking */}
+      <div 
+        id="bg-hero"
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: '100%',
+          height: '100vh',
+          backgroundImage: "url('https://images.unsplash.com/photo-1620712943543-bcc4688e7485?q=80&w=2000&auto=format&fit=crop')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'right center',
+          backgroundRepeat: 'no-repeat',
+          opacity: 0.35,
+          zIndex: -1,
+          pointerEvents: 'none',
+          maskImage: 'linear-gradient(to left, rgba(0,0,0,1) 20%, rgba(0,0,0,0) 80%), linear-gradient(to top, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 100%)',
+          WebkitMaskImage: 'linear-gradient(to left, rgba(0,0,0,1) 20%, rgba(0,0,0,0) 80%), linear-gradient(to top, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 100%)'
+        }}
+      />
+      
       {/* CSS Glow Effects */}
       <div className="bg-glow-purple" style={{ top: '-10%', right: '-5%' }} />
       <div className="bg-glow-cyan" style={{ bottom: '-10%', left: '-5%' }} />

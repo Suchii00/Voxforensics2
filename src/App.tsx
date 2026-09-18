@@ -348,63 +348,67 @@ function AppContent() {
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 pt-12 pb-20">
+      <main className="max-w-7xl mx-auto px-6 pt-12 pb-20 relative z-10">
         {activeTab === 'home' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
             {/* Left Side */}
             <div className="space-y-8">
-              <div className="inline-flex items-center gap-2 border border-[#00d4ff]/30 bg-[#00d4ff]/5 rounded-full px-4 py-1.5">
+              <div className="inline-flex items-center gap-2 border border-[#00d4ff]/30 bg-[#00d4ff]/5 rounded-full px-4 py-1.5 backdrop-blur-sm">
                 <span className="text-xs font-semibold tracking-widest text-[#00d4ff] uppercase">AI • AUDIO • FORENSICS</span>
               </div>
 
               <div>
-                <h1 className="text-6xl md:text-7xl font-extrabold tracking-tight text-gradient leading-none mb-2">
+                <h1 className="text-6xl md:text-7xl font-extrabold tracking-tight text-gradient leading-none mb-2 drop-shadow-lg">
                   VoxForensics
                 </h1>
-                <h2 className="text-sm md:text-base tracking-[0.3em] text-gray-400 font-light uppercase">
+                <h2 className="text-sm md:text-base tracking-[0.3em] text-gray-300 font-light uppercase drop-shadow-md">
                   Deepfake Audio Detector
                 </h2>
               </div>
 
-              <p className="text-2xl md:text-3xl font-bold text-white leading-snug">
+              <p className="text-2xl md:text-3xl font-bold text-white leading-snug drop-shadow-md">
                 Is that voice <span className="text-[#00ff88]">real</span>, or <span className="text-[#a855f7]">AI-generated</span>?
               </p>
 
-              <p className="text-gray-400 text-sm leading-relaxed max-w-lg">
+              <p className="text-gray-300 text-sm leading-relaxed max-w-lg drop-shadow">
                 Upload a voice recording and VoxForensics will extract acoustic features (MFCCs, pitch, spectral centroid, ZCR, chroma) and classify the clip using advanced machine learning algorithms.
               </p>
 
               <div className="flex flex-wrap gap-4">
-                <button onClick={handleSampleReal} className="bg-gradient-to-r from-emerald-500/20 to-emerald-500/5 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-semibold py-3 px-6 rounded-xl flex items-center gap-3 transition-all duration-300 hover:shadow-[0_0_20px_rgba(0,255,136,0.15)]">
+                <button onClick={handleSampleReal} className="bg-gradient-to-r from-emerald-500/20 to-emerald-500/5 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-semibold py-3 px-6 rounded-xl flex items-center gap-3 transition-all duration-300 hover:shadow-[0_0_20px_rgba(0,255,136,0.15)] backdrop-blur-sm">
                   <i className="fa-solid fa-play text-xs"></i> Try sample: Real voice
                 </button>
-                <button onClick={handleSampleFake} className="bg-gradient-to-r from-purple-500/20 to-purple-500/5 border border-purple-500/40 hover:border-purple-400 text-purple-300 font-semibold py-3 px-6 rounded-xl flex items-center gap-3 transition-all duration-300 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]">
+                <button onClick={handleSampleFake} className="bg-gradient-to-r from-purple-500/20 to-purple-500/5 border border-purple-500/40 hover:border-purple-400 text-purple-300 font-semibold py-3 px-6 rounded-xl flex items-center gap-3 transition-all duration-300 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)] backdrop-blur-sm">
                   <i className="fa-solid fa-robot text-xs"></i> Try sample: AI clone
                 </button>
               </div>
 
+              <p className="text-xs text-gray-400 tracking-wide drop-shadow">
+                Explore voice authenticity with the power of AI.
+              </p>
+
               <div className="pt-8 border-t border-[#1a2a4a]/50">
-                <p className="text-xs font-semibold tracking-widest text-gray-500 mb-4 uppercase">What you get in every scan</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="feature-card">
+                <p className="text-xs font-semibold tracking-widest text-gray-400 mb-4 uppercase drop-shadow">What you get in every scan</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="bg-[#0a1128]/60 border border-[#1a2a4a] p-4 rounded-xl backdrop-blur-sm">
                     <i className="fa-solid fa-shield-halved text-[#00ff88] text-lg mb-2"></i>
                     <h4 className="text-sm font-semibold text-white mb-1">Real vs Fake Verdict</h4>
                     <p className="text-[11px] text-gray-400 leading-relaxed">Probability score for both classes from the trained model.</p>
                   </div>
-                  <div className="feature-card">
+                  <div className="bg-[#0a1128]/60 border border-[#1a2a4a] p-4 rounded-xl backdrop-blur-sm">
                     <i className="fa-solid fa-chart-simple text-[#00d4ff] text-lg mb-2"></i>
                     <h4 className="text-sm font-semibold text-white mb-1">Feature Evidence</h4>
                     <p className="text-[11px] text-gray-400 leading-relaxed">MFCC, pitch, spectral centroid, ZCR, chroma and more.</p>
                   </div>
-                  <div className="feature-card">
+                  <div className="bg-[#0a1128]/60 border border-[#1a2a4a] p-4 rounded-xl backdrop-blur-sm">
                     <i className="fa-solid fa-wave-square text-[#a855f7] text-lg mb-2"></i>
                     <h4 className="text-sm font-semibold text-white mb-1">Visual Proof</h4>
                     <p className="text-[11px] text-gray-400 leading-relaxed">Waveform, spectrogram, and model analysis.</p>
                   </div>
-                  <div className="feature-card">
+                  <div className="bg-[#0a1128]/60 border border-[#1a2a4a] p-4 rounded-xl backdrop-blur-sm">
                     <i className="fa-solid fa-brain text-yellow-500 text-lg mb-2"></i>
-                    <h4 className="text-sm font-semibold text-white mb-1">AI-Powered</h4>
-                    <p className="text-[11px] text-gray-400 leading-relaxed">Advanced deep learning for accurate detection.</p>
+                    <h4 className="text-sm font-semibold text-white mb-1">Academic Prototype</h4>
+                    <p className="text-[11px] text-gray-400 leading-relaxed">Built for research and learning. Not a definitive forensic tool.</p>
                   </div>
                 </div>
               </div>
@@ -686,7 +690,7 @@ function AppContent() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-[#1a2a4a]/50 bg-[#050914]/80 py-6 mt-12">
+      <footer className="border-t border-[#1a2a4a]/50 bg-[#050914]/80 py-6 mt-12 relative z-10">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-gray-500">
           <div className="flex items-center gap-2">
             <span className="font-bold text-white">VoxForensics</span>
