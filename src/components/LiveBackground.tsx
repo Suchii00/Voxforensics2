@@ -1,5 +1,5 @@
-import { useRef, useMemo, useCallback } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { useRef, useMemo } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
 // Generate head-shaped point cloud
@@ -59,8 +59,6 @@ function generateHeadPoints(count: number): Float32Array {
 // Face Point Cloud Component
 function FacePointCloud() {
   const pointsRef = useRef<THREE.Points>(null);
-  const mouseRef = useRef({ x: 0, y: 0 });
-  const { viewport } = useThree();
   
   const { positions, colors } = useMemo(() => {
     const count = 3000;
@@ -80,24 +78,13 @@ function FacePointCloud() {
     return { positions: pos, colors: col };
   }, []);
 
-  const handlePointerMove = useCallback((e: { clientX: number; clientY: number }) => {
-    mouseRef.current.x = (e.clientX / window.innerWidth - 0.5) * 2;
-    mouseRef.current.y = (e.clientY / window.innerHeight - 0.5) * 2;
-  }, []);
-
   useFrame((state) => {
     if (!pointsRef.current) return;
     
     const time = state.clock.elapsedTime;
     
-    // Subtle rotation following mouse
-    const targetRotY = mouseRef.current.x * 0.3;
-    const targetRotX = mouseRef.current.y * 0.15;
-    pointsRef.current.rotation.y += (targetRotY - pointsRef.current.rotation.y) * 0.02;
-    pointsRef.current.rotation.x += (targetRotX - pointsRef.current.rotation.x) * 0.02;
-    
-    // Gentle idle rotation
-    pointsRef.current.rotation.y += 0.001;
+    // Gentle rotation
+    pointsRef.current.rotation.y = time * 0.1;
     
     // Breathing effect - subtle scale pulse
     const breathe = 1 + Math.sin(time * 0.5) * 0.02;
@@ -118,18 +105,6 @@ function FacePointCloud() {
     }
     pointsRef.current.geometry.attributes.position.needsUpdate = true;
   });
-
-  // Listen for mouse movement
-  useMemo(() => {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('pointermove', handlePointerMove);
-    }
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('pointermove', handlePointerMove);
-      }
-    };
-  }, [handlePointerMove]);
 
   return (
     <points ref={pointsRef} position={[0, 0, 0]}>
@@ -162,14 +137,12 @@ function FacePointCloud() {
 
 // Animated Wave Lines
 function WaveLines() {
-  const groupRef = useRef<THREE.Group>(null);
-  const linesArray = useRef<THREE.Line[]>([]);
+  const linesRef = useRef<THREE.Group>(null);
   
-  const lineData = useMemo(() => {
+  const lineGeometries = useMemo(() => {
+    const geometries: THREE.BufferGeometry[] = [];
     const numLines = 5;
     const pointsPerLine = 200;
-    const data: { positions: Float32Array; color: string }[] = [];
-    const colors = ['#00F2FE', '#4FACFE', '#7F00FF', '#E100FF', '#00F2FE'];
     
     for (let l = 0; l < numLines; l++) {
       const positions = new Float32Array(pointsPerLine * 3);
@@ -178,18 +151,22 @@ function WaveLines() {
         positions[i * 3 + 1] = 0;
         positions[i * 3 + 2] = (l - numLines / 2) * 0.8;
       }
-      data.push({ positions, color: colors[l] });
+      
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometries.push(geom);
     }
     
-    return data;
+    return geometries;
   }, []);
 
   useFrame((state) => {
+    if (!linesRef.current) return;
     const time = state.clock.elapsedTime;
     
-    linesArray.current.forEach((lineObj, lineIndex) => {
-      if (!lineObj) return;
-      const posArray = lineObj.geometry.attributes.position.array as Float32Array;
+    linesRef.current.children.forEach((child, lineIndex) => {
+      const line = child as THREE.Line;
+      const posArray = line.geometry.attributes.position.array as Float32Array;
       const pointsPerLine = posArray.length / 3;
       
       for (let i = 0; i < pointsPerLine; i++) {
@@ -202,27 +179,25 @@ function WaveLines() {
           Math.sin(x * freq1 + time * (0.5 + lineIndex * 0.2)) * amplitude +
           Math.sin(x * freq2 + time * 0.8) * amplitude * 0.5;
       }
-      lineObj.geometry.attributes.position.needsUpdate = true;
+      line.geometry.attributes.position.needsUpdate = true;
     });
   });
 
+  const colors = ['#00d4ff', '#4FACFE', '#a855f7', '#E100FF', '#00d4ff'];
+
   return (
-    <group ref={groupRef} position={[0, -2, -2]}>
-      {lineData.map((data, i) => (
+    <group ref={linesRef} position={[0, -2, -2]}>
+      {lineGeometries.map((geom, i) => (
         <primitive
           key={i}
           object={(() => {
-            const geom = new THREE.BufferGeometry();
-            geom.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
             const mat = new THREE.LineBasicMaterial({
-              color: data.color,
+              color: colors[i],
               transparent: true,
               opacity: 0.3 - i * 0.04,
               blending: THREE.AdditiveBlending,
             });
-            const lineObj = new THREE.Line(geom, mat);
-            linesArray.current[i] = lineObj;
-            return lineObj;
+            return new THREE.Line(geom, mat);
           })()}
         />
       ))}
@@ -282,7 +257,7 @@ function FloatingParticles() {
       </bufferGeometry>
       <pointsMaterial
         size={0.03}
-        color="#00F2FE"
+        color="#00d4ff"
         transparent
         opacity={0.4}
         sizeAttenuation
@@ -308,27 +283,6 @@ function Scene() {
 export default function LiveBackground() {
   return (
     <div className="fixed inset-0 z-0" style={{ background: '#050914' }}>
-      {/* AI Face Background Image with Masking */}
-      <div 
-        id="bg-hero"
-        style={{
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          width: '100%',
-          height: '100vh',
-          backgroundImage: "url('https://images.unsplash.com/photo-1620712943543-bcc4688e7485?q=80&w=2000&auto=format&fit=crop')",
-          backgroundSize: 'cover',
-          backgroundPosition: 'right center',
-          backgroundRepeat: 'no-repeat',
-          opacity: 0.35,
-          zIndex: -1,
-          pointerEvents: 'none',
-          maskImage: 'linear-gradient(to left, rgba(0,0,0,1) 20%, rgba(0,0,0,0) 80%), linear-gradient(to top, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 100%)',
-          WebkitMaskImage: 'linear-gradient(to left, rgba(0,0,0,1) 20%, rgba(0,0,0,0) 80%), linear-gradient(to top, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 100%)'
-        }}
-      />
-      
       {/* CSS Glow Effects */}
       <div className="bg-glow-purple" style={{ top: '-10%', right: '-5%' }} />
       <div className="bg-glow-cyan" style={{ bottom: '-10%', left: '-5%' }} />
