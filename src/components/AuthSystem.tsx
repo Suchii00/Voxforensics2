@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface User {
   id: string;
@@ -31,6 +31,43 @@ export default function AuthSystem({ onLogin, onLogout }: {
   const [error, setError] = useState('');
   const [showTwoFactorSetup, setShowTwoFactorSetup] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState('');
+
+  // Seed demo accounts on first load
+  useEffect(() => {
+    const users: User[] = JSON.parse(localStorage.getItem('voxforensics_users') || '[]');
+    
+    // Check if demo accounts exist
+    const hasAdmin = users.find(u => u.email === 'admin@voxforensics.com');
+    const hasUser = users.find(u => u.email === 'user@example.com');
+    
+    if (!hasAdmin) {
+      users.push({
+        id: 'admin-001',
+        email: 'admin@voxforensics.com',
+        password: 'admin123',
+        name: 'Admin User',
+        role: 'admin',
+        referralCode: 'VF-ADMIN01',
+        createdAt: new Date().toISOString(),
+        twoFactorEnabled: false,
+      });
+    }
+    
+    if (!hasUser) {
+      users.push({
+        id: 'user-001',
+        email: 'user@example.com',
+        password: 'user123',
+        name: 'Demo User',
+        role: 'user',
+        referralCode: 'VF-USER001',
+        createdAt: new Date().toISOString(),
+        twoFactorEnabled: false,
+      });
+    }
+    
+    localStorage.setItem('voxforensics_users', JSON.stringify(users));
+  }, []);
 
   // Generate referral code
   const generateReferralCode = () => {
