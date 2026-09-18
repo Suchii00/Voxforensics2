@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { User } from './AuthSystem';
 
-export default function AdminDashboard({ currentUser, onLogout }: { currentUser: User; onLogout: () => void }) {
+export default function AdminDashboard({ currentUser, onLogout, onBack }: { currentUser: User; onLogout: () => void; onBack: () => void }) {
   const [users, setUsers] = useState<User[]>([]);
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'analytics' | 'settings'>('overview');
 

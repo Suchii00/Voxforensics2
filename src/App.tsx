@@ -1,18 +1,18 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import LiveBackground from './components/LiveBackground';
-import E2ETestPanel from './components/E2ETestPanel';
-import SecurityScanner, { SecurityScanResult } from './components/SecurityScanner';
-import ConsentModal, { hasGivenConsent, revokeConsent } from './components/ConsentModal';
-import AuthSystem, { getCurrentUser, logout, User } from './components/AuthSystem';
+import { AuthProvider, useAuth } from './components/AuthSystem';
+import { ConsentProvider, useConsent } from './components/ConsentModal';
+import { analyzeAudio, getScanHistory, saveScanToHistory, clearHistory, AnalysisResult, ScanRecord } from './utils/analysis';
+import SecurityScanner from './components/SecurityScanner';
 import AdminDashboard from './components/AdminDashboard';
 import UserDashboard from './components/UserDashboard';
-import { analyzeAudio, getScanHistory, saveScanToHistory, clearHistory, AnalysisResult, ScanRecord } from './utils/analysis';
-import jsPDF from 'jspdf';
+import E2ETestPanel from './components/E2ETestPanel';
 
-type TabType = 'analyze' | 'history' | 'batch';
+type TabType = 'home' | 'scanner' | 'batch' | 'history' | 'about';
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState<TabType>('analyze');
+function AppContent() {
+  const { user, logout } = useAuth();
+  const { hasConsented } = useConsent();
+  const [activeTab, setActiveTab] = useState<TabType>('home');
   const [isRecording, setIsRecording] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentResult, setCurrentResult] = useState<AnalysisResult | null>(null);
@@ -23,16 +23,7 @@ export default function App() {
   const [batchFiles, setBatchFiles] = useState<File[]>([]);
   const [batchResults, setBatchResults] = useState<{ filename: string; result: AnalysisResult }[]>([]);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [showReport, setShowReport] = useState(false);
-  const [recordingStatus, setRecordingStatus] = useState<string>('');
-  const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
   const [showTestPanel, setShowTestPanel] = useState(false);
-  const [hasConsent, setHasConsent] = useState(hasGivenConsent());
-  const [securityScanResult, setSecurityScanResult] = useState<SecurityScanResult | null>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  
-  // Authentication state
-  const [currentUser, setCurrentUser] = useState<User | null>(getCurrentUser());
   const [showDashboard, setShowDashboard] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -48,32 +39,7 @@ export default function App() {
   const simulatedCanvasRef = useRef<HTMLCanvasElement>(null);
   const simAnimRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
-
-  // Check mic availability on mount
-  useEffect(() => {
-    const checkMic = async () => {
-      try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          setMicAvailable(false);
-          setRecordingStatus('Microphone not available in this environment');
-          return;
-        }
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = devices.filter(d => d.kind === 'audioinput');
-        if (audioInputs.length === 0) {
-          setMicAvailable(false);
-          setRecordingStatus('No microphone detected');
-        } else {
-          setMicAvailable(true);
-          setRecordingStatus('Microphone ready');
-        }
-      } catch {
-        setMicAvailable(false);
-        setRecordingStatus('Microphone access restricted — using simulated recording');
-      }
-    };
-    checkMic();
-  }, []);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
   // Generate sample waveform data
   const generateSampleWaveform = useCallback((isFake: boolean) => {
@@ -119,7 +85,7 @@ export default function App() {
     return data;
   }, []);
 
-  // Process audio file for analysis
+  // Process audio file
   const processAudioFile = useCallback(async (file: File, forceResult?: 'real' | 'fake') => {
     setIsAnalyzing(true);
     setCurrentResult(null);
@@ -184,22 +150,8 @@ export default function App() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setPendingFile(file);
-      setSecurityScanResult(null);
-    }
+    if (file) processAudioFile(file);
     e.target.value = '';
-  };
-
-  const handleSecurityScanComplete = (result: SecurityScanResult) => {
-    setSecurityScanResult(result);
-    if (result.isValid && pendingFile) {
-      // Auto-process after a short delay to show scan results
-      setTimeout(() => {
-        processAudioFile(pendingFile);
-        setPendingFile(null);
-      }, 1500);
-    }
   };
 
   const handleSampleReal = () => {
@@ -214,162 +166,89 @@ export default function App() {
     processAudioFile(sampleFile, 'fake');
   };
 
-  // Simulated recording waveform animation
-  const drawSimulatedWaveform = useCallback(() => {
-    const canvas = simulatedCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    canvas.width = canvas.offsetWidth * 2;
-    canvas.height = canvas.offsetHeight * 2;
-    ctx.scale(2, 2);
-    const width = canvas.offsetWidth;
-    const height = canvas.offsetHeight;
-    let offset = 0;
-
-    const draw = () => {
-      offset += 2;
-      ctx.fillStyle = 'rgba(3, 7, 18, 0.15)';
-      ctx.fillRect(0, 0, width, height);
-
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#00F2FE';
-      ctx.shadowColor = '#00F2FE';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-
-      for (let x = 0; x < width; x++) {
-        const t = (x + offset) * 0.02;
-        const y = height / 2 +
-          Math.sin(t * 3) * 15 +
-          Math.sin(t * 7) * 8 +
-          Math.sin(t * 13) * 4 +
-          (Math.random() - 0.5) * 6;
-        if (x === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      ctx.fillStyle = '#FF0055';
-      ctx.beginPath();
-      ctx.arc(width - 20, 15, 6, 0, Math.PI * 2);
-      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() * 0.005);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-
-      simAnimRef.current = requestAnimationFrame(draw);
-    };
-    draw();
-  }, []);
-
   const startRecording = async () => {
-    setIsRecording(true);
-    setRecordingTime(0);
-    setCurrentResult(null);
-    setWaveformData([]);
-    setSpectrogramData([]);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
-    recordingIntervalRef.current = setInterval(() => {
-      setRecordingTime(t => t + 1);
-    }, 1000);
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
 
-    if (micAvailable !== false && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        streamRef.current = stream;
-        setRecordingStatus('🔴 Recording from microphone...');
+      mediaRecorder.onstop = async () => {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+        if (audioChunksRef.current.length > 0) {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const file = new File([audioBlob], `recording_${Date.now()}.webm`, { type: 'audio/webm' });
+          processAudioFile(file);
+        }
+      };
 
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
+      const audioContext = new AudioContext();
+      audioContextRef.current = audioContext;
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      analyserRef.current = analyser;
+      source.connect(analyser);
 
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) audioChunksRef.current.push(e.data);
-        };
+      const drawLiveWaveform = () => {
+        const canvas = simulatedCanvasRef.current;
+        if (!canvas || !analyserRef.current) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
 
-        mediaRecorder.onstop = async () => {
-          if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-          }
-          if (audioChunksRef.current.length > 0) {
-            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            const file = new File([audioBlob], `recording_${Date.now()}.webm`, { type: 'audio/webm' });
-            processAudioFile(file);
-          } else {
-            const file = new File([''], `recording_${Date.now()}.webm`, { type: 'audio/webm' });
-            processAudioFile(file);
-          }
-        };
+        canvas.width = canvas.offsetWidth * 2;
+        canvas.height = canvas.offsetHeight * 2;
+        ctx.scale(2, 2);
+        const width = canvas.offsetWidth;
+        const height = canvas.offsetHeight;
 
-        const audioContext = new AudioContext();
-        audioContextRef.current = audioContext;
-        const source = audioContext.createMediaStreamSource(stream);
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 2048;
-        analyserRef.current = analyser;
-        source.connect(analyser);
+        const bufferLength = analyserRef.current.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyserRef.current.getByteTimeDomainData(dataArray);
 
-        const drawLiveWaveform = () => {
-          const canvas = simulatedCanvasRef.current;
-          if (!canvas || !analyserRef.current) return;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return;
+        ctx.fillStyle = 'rgba(5, 9, 20, 0.2)';
+        ctx.fillRect(0, 0, width, height);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#00d4ff';
+        ctx.shadowColor = '#00d4ff';
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
 
-          canvas.width = canvas.offsetWidth * 2;
-          canvas.height = canvas.offsetHeight * 2;
-          ctx.scale(2, 2);
-          const width = canvas.offsetWidth;
-          const height = canvas.offsetHeight;
+        const sliceWidth = width / bufferLength;
+        let x = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const v = dataArray[i] / 128.0;
+          const y = (v * height) / 2;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+          x += sliceWidth;
+        }
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
 
-          const bufferLength = analyserRef.current.frequencyBinCount;
-          const dataArray = new Uint8Array(bufferLength);
-          analyserRef.current.getByteTimeDomainData(dataArray);
+        animationRef.current = requestAnimationFrame(drawLiveWaveform);
+      };
+      drawLiveWaveform();
 
-          ctx.fillStyle = 'rgba(3, 7, 18, 0.2)';
-          ctx.fillRect(0, 0, width, height);
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = '#00F2FE';
-          ctx.shadowColor = '#00F2FE';
-          ctx.shadowBlur = 6;
-          ctx.beginPath();
-
-          const sliceWidth = width / bufferLength;
-          let x = 0;
-          for (let i = 0; i < bufferLength; i++) {
-            const v = dataArray[i] / 128.0;
-            const y = (v * height) / 2;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-            x += sliceWidth;
-          }
-          ctx.lineTo(width, height / 2);
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-
-          ctx.fillStyle = '#FF0055';
-          ctx.beginPath();
-          ctx.arc(width - 20, 15, 6, 0, Math.PI * 2);
-          ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() * 0.005);
-          ctx.fill();
-          ctx.globalAlpha = 1;
-
-          animationRef.current = requestAnimationFrame(drawLiveWaveform);
-        };
-        drawLiveWaveform();
-
-        mediaRecorder.start(100);
-        return;
-      } catch (err) {
-        console.warn('Microphone access failed:', err);
-        setRecordingStatus('⚠️ Mic denied — using simulated recording');
-      }
+      mediaRecorder.start(100);
+      setIsRecording(true);
+      setRecordingTime(0);
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime(t => t + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Microphone access failed:', err);
+      alert('Could not access microphone. Please allow permissions.');
     }
-
-    setRecordingStatus('🔴 Simulated recording in progress...');
-    drawSimulatedWaveform();
   };
 
   const stopRecording = () => {
@@ -377,25 +256,13 @@ export default function App() {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current = null;
     }
-    cancelAnimationFrame(simAnimRef.current);
     cancelAnimationFrame(animationRef.current);
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
     clearInterval(recordingIntervalRef.current);
     setIsRecording(false);
-    setRecordingStatus('Processing recording...');
-
-    if (audioChunksRef.current.length === 0) {
-      const file = new File([''], `recording_${Date.now()}.webm`, { type: 'audio/webm' });
-      setAudioFile(file);
-      processAudioFile(file);
-    }
   };
 
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -410,694 +277,330 @@ export default function App() {
     e.target.value = '';
   };
 
-  const generatePDF = () => {
-    if (!currentResult) return;
-    const doc = new jsPDF();
-    doc.setFillColor(3, 7, 18);
-    doc.rect(0, 0, 210, 40, 'F');
-    doc.setTextColor(0, 242, 254);
-    doc.setFontSize(24);
-    doc.text('VoxForensics', 20, 25);
-    doc.setTextColor(200, 200, 200);
-    doc.setFontSize(10);
-    doc.text('AI Deepfake Audio Detection — Forensic Report', 20, 35);
-
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(14);
-    doc.text('Analysis Summary', 20, 55);
-    doc.setFontSize(10);
-    doc.text(`File: ${audioFile?.name || 'N/A'}`, 20, 68);
-    doc.text(`Date: ${new Date(currentResult.timestamp).toLocaleString()}`, 20, 76);
-    doc.text(`Model: ${currentResult.modelVersion}`, 20, 84);
-    doc.text(`Duration: ${currentResult.audioDuration.toFixed(2)}s`, 20, 92);
-    doc.text(`Sample Rate: ${currentResult.sampleRate} Hz`, 20, 100);
-
-    doc.setFontSize(14);
-    doc.text('Verdict', 20, 118);
-    doc.setFontSize(12);
-    if (currentResult.isDeepfake) {
-      doc.setTextColor(255, 0, 85);
-      doc.text('DEEPFAKE DETECTED', 20, 130);
-    } else {
-      doc.setTextColor(0, 180, 80);
-      doc.text('AUTHENTIC AUDIO', 20, 130);
-    }
-
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(10);
-    doc.text(`Confidence: ${(currentResult.confidence * 100).toFixed(1)}%`, 20, 142);
-    doc.text(`Uncertainty: ${(currentResult.uncertainty * 100).toFixed(1)}%`, 20, 150);
-
-    doc.setFontSize(14);
-    doc.text('Classification Probabilities', 20, 168);
-    doc.setFontSize(10);
-    doc.text(`Real: ${(currentResult.probabilities.real * 100).toFixed(1)}%`, 20, 180);
-    doc.text(`Deepfake: ${(currentResult.probabilities.deepfake * 100).toFixed(1)}%`, 20, 188);
-    doc.text(`Manipulated: ${(currentResult.probabilities.manipulated * 100).toFixed(1)}%`, 20, 196);
-
-    doc.setFontSize(14);
-    doc.text('Acoustic Features', 20, 214);
-    doc.setFontSize(9);
-    const features = currentResult.features;
-    doc.text(`Spectral Centroid: ${features.spectralCentroid.toFixed(1)} Hz`, 20, 226);
-    doc.text(`Pitch Variability: ${features.pitchVariability.toFixed(4)}`, 20, 234);
-    doc.text(`Formant Stability: ${features.formantStability.toFixed(4)}`, 20, 242);
-    doc.text(`Harmonic Ratio: ${features.harmonicRatio.toFixed(4)}`, 20, 250);
-    doc.text(`Spectral Flatness: ${features.spectralFlatness.toFixed(4)}`, 20, 258);
-
-    doc.addPage();
-    doc.setFontSize(14);
-    doc.text('Model Explanation', 20, 25);
-    doc.setFontSize(10);
-    let yPos = 40;
-    currentResult.explanation.forEach((line) => {
-      const splitLines = doc.splitTextToSize(line, 170);
-      doc.text(splitLines, 20, yPos);
-      yPos += splitLines.length * 7 + 5;
-    });
-
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text('Generated by VoxForensics AI Detection System', 20, 285);
-    doc.text(`Report ID: VF-${Date.now().toString(36).toUpperCase()}`, 140, 285);
-    doc.save(`VoxForensics_Report_${Date.now()}.pdf`);
-  };
-
-  // Draw analyzed waveform
-  useEffect(() => {
-    if (waveformData.length > 0 && !isRecording) {
-      const canvas = canvasWaveformRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      canvas.width = canvas.offsetWidth * 2;
-      canvas.height = canvas.offsetHeight * 2;
-      ctx.scale(2, 2);
-      const width = canvas.offsetWidth;
-      const height = canvas.offsetHeight;
-
-      ctx.fillStyle = 'rgba(3, 7, 18, 0.9)';
-      ctx.fillRect(0, 0, width, height);
-
-      ctx.strokeStyle = 'rgba(0, 242, 254, 0.1)';
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(0, height / 2);
-      ctx.lineTo(width, height / 2);
-      ctx.stroke();
-
-      const gradient = ctx.createLinearGradient(0, 0, width, 0);
-      if (currentResult?.isDeepfake) {
-        gradient.addColorStop(0, '#FF0055');
-        gradient.addColorStop(1, '#E100FF');
-      } else {
-        gradient.addColorStop(0, '#00F2FE');
-        gradient.addColorStop(1, '#00FF88');
-      }
-
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = 1.5;
-      ctx.shadowColor = currentResult?.isDeepfake ? '#FF0055' : '#00F2FE';
-      ctx.shadowBlur = 4;
-      ctx.beginPath();
-
-      const maxVal = Math.max(...waveformData.map(Math.abs), 0.01);
-      waveformData.forEach((val, i) => {
-        const x = (i / waveformData.length) * width;
-        const y = height / 2 - (val / maxVal) * (height / 2) * 0.8;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      ctx.globalAlpha = 0.3;
-      ctx.beginPath();
-      waveformData.forEach((val, i) => {
-        const x = (i / waveformData.length) * width;
-        const y = height / 2 + (val / maxVal) * (height / 2) * 0.8;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-  }, [waveformData, isRecording, currentResult]);
-
-  // Draw spectrogram
-  useEffect(() => {
-    if (spectrogramData.length > 0) {
-      const canvas = canvasSpectrogramRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      canvas.width = canvas.offsetWidth * 2;
-      canvas.height = canvas.offsetHeight * 2;
-      ctx.scale(2, 2);
-      const width = canvas.offsetWidth;
-      const height = canvas.offsetHeight;
-      const frameWidth = width / spectrogramData.length;
-      const binHeight = height / (spectrogramData[0]?.length || 1);
-
-      spectrogramData.forEach((frame, f) => {
-        frame.forEach((value, b) => {
-          const r = Math.floor(value * (currentResult?.isDeepfake ? 255 : 0));
-          const g = Math.floor(value * (currentResult?.isDeepfake ? 0 : 242));
-          const bColor = Math.floor(value * (currentResult?.isDeepfake ? 85 : 254));
-          ctx.fillStyle = `rgb(${r}, ${g}, ${bColor})`;
-          ctx.fillRect(f * frameWidth, height - (b + 1) * binHeight, frameWidth + 1, binHeight + 1);
-        });
-      });
-    }
-  }, [spectrogramData, currentResult]);
-
-  useEffect(() => {
-    return () => {
-      cancelAnimationFrame(animationRef.current);
-      cancelAnimationFrame(simAnimRef.current);
-      clearInterval(recordingIntervalRef.current);
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-      if (audioContextRef.current) audioContextRef.current.close();
-    };
-  }, []);
-
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Authentication handlers
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-  };
-
-  const handleLogout = () => {
-    logout();
-    setCurrentUser(null);
-    setShowDashboard(false);
-  };
-
-  const handleBackToApp = () => {
-    setShowDashboard(false);
-  };
-
-  // Show login screen if not authenticated
-  if (!currentUser) {
-    return (
-      <>
-        <LiveBackground />
-        <AuthSystem onLogin={handleLogin} onLogout={handleLogout} />
-      </>
-    );
-  }
-
-  // Show admin dashboard for admin users
-  if (currentUser.role === 'admin' && showDashboard) {
-    return <AdminDashboard currentUser={currentUser} onLogout={handleLogout} />;
-  }
-
-  // Show user dashboard for regular users
+  // Show dashboard if requested
   if (showDashboard) {
-    return <UserDashboard currentUser={currentUser} onLogout={handleLogout} onBackToApp={handleBackToApp} />;
+    if (user?.role === 'admin') {
+      return <AdminDashboard currentUser={user} onLogout={logout} onBack={() => setShowDashboard(false)} />;
+    }
+    return <UserDashboard currentUser={user!} onLogout={logout} onBack={() => setShowDashboard(false)} />;
   }
 
-  // Show consent modal if not given
-  if (!hasConsent) {
-    return (
-      <>
-        <LiveBackground />
-        <ConsentModal
-          onAccept={() => setHasConsent(true)}
-          onDecline={() => {
-            // Show a message that consent is required
-            alert('You must accept the consent agreement to use VoxForensics. Please reload the page to try again.');
-          }}
-        />
-      </>
-    );
+  // Show consent modal if not consented
+  if (!hasConsented) {
+    return null; // ConsentModal is rendered by ConsentProvider
   }
 
   return (
-    <div className="relative min-h-screen">
-      <LiveBackground />
-      
-      <div className="relative z-10 max-w-7xl mx-auto px-4 py-8 md:py-12">
-        {/* User Info Bar */}
-        {currentUser && (
-          <div className="flex items-center justify-between mb-6 p-4 rounded-xl glass-card">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-purple-500 flex items-center justify-center text-white font-bold">
-                {currentUser.name.charAt(0).toUpperCase()}
+    <div className="min-h-screen">
+      {/* Navigation */}
+      <nav className="border-b border-[#1a2a4a]/50 bg-[#050914]/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#00d4ff] to-[#a855f7] flex items-center justify-center">
+              <i className="fa-solid fa-wave-square text-[#050914] text-sm"></i>
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-white leading-tight">VoxForensics</h1>
+              <p className="text-[10px] text-gray-400 tracking-widest uppercase leading-tight">Deepfake Audio Detector</p>
+            </div>
+          </div>
+
+          <div className="hidden md:flex items-center gap-1 bg-[#0a1128]/50 border border-[#1a2a4a] rounded-full px-1 py-1">
+            {(['home', 'scanner', 'batch', 'history', 'about'] as TabType[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition flex items-center gap-2 ${
+                  activeTab === tab
+                    ? 'text-white bg-[#1a2a4a]/50'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {tab === 'home' && <><i className="fa-solid fa-house text-xs text-[#00d4ff]"></i> Home</>}
+                {tab === 'scanner' && <><i className="fa-solid fa-expand text-xs"></i> Scanner</>}
+                {tab === 'batch' && <><i className="fa-solid fa-layer-group text-xs"></i> Batch</>}
+                {tab === 'history' && <><i className="fa-solid fa-clock-rotate-left text-xs"></i> History</>}
+                {tab === 'about' && <><i className="fa-solid fa-circle-info text-xs"></i> About</>}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3">
+            {user && (
+              <>
+                <button onClick={() => setShowDashboard(true)} className="text-sm text-gray-400 hover:text-white transition">
+                  <i className="fa-solid fa-user mr-2"></i>
+                  {user.name}
+                </button>
+                <button onClick={logout} className="text-sm text-gray-400 hover:text-white transition">
+                  <i className="fa-solid fa-right-from-bracket"></i>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-6 pt-12 pb-20">
+        {activeTab === 'home' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+            {/* Left Side */}
+            <div className="space-y-8">
+              <div className="inline-flex items-center gap-2 border border-[#00d4ff]/30 bg-[#00d4ff]/5 rounded-full px-4 py-1.5">
+                <span className="text-xs font-semibold tracking-widest text-[#00d4ff] uppercase">AI • AUDIO • FORENSICS</span>
               </div>
+
               <div>
-                <p className="text-sm font-medium text-white">{currentUser.name}</p>
-                <p className="text-xs text-gray-400">{currentUser.email}</p>
+                <h1 className="text-6xl md:text-7xl font-extrabold tracking-tight text-gradient leading-none mb-2">
+                  VoxForensics
+                </h1>
+                <h2 className="text-sm md:text-base tracking-[0.3em] text-gray-400 font-light uppercase">
+                  Deepfake Audio Detector
+                </h2>
               </div>
-              <span className={`px-2 py-1 rounded-full text-xs ${
-                currentUser.role === 'admin' 
-                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
-                  : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-              }`}>
-                {currentUser.role}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setShowDashboard(true)} 
-                className="neon-btn text-xs py-2 px-4"
-              >
-                👤 Dashboard
-              </button>
-              <button 
-                onClick={handleLogout} 
-                className="neon-btn neon-btn-danger text-xs py-2 px-4"
-              >
-                🚪 Logout
-              </button>
-            </div>
-          </div>
-        )}
 
-        {/* Header with 3D Metallic Title */}
-        <header className="text-center mb-12">
-          <h1 className="hero-title mb-4">VoxForensics</h1>
-          <p className="hero-subtitle mb-6">
-            AI-Powered Deepfake Audio Detection & Forensic Analysis
-          </p>
-          <div className="flex justify-center gap-3 flex-wrap">
-            <button onClick={startRecording} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
-              🎙️ Recording
-            </button>
-            <button onClick={() => fileInputRef.current?.click()} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
-              📁 Upload
-            </button>
-            <button onClick={() => {
-              if (waveformData.length > 0) {
-                const el = document.querySelector('.waveform-container');
-                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
-              🌊 Waveform
-            </button>
-            <button onClick={() => {
-              if (spectrogramData.length > 0) {
-                const el = document.querySelector('.spectrogram-container');
-                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
-              🔬 Spectrogram
-            </button>
-            <button onClick={() => {
-              if (currentResult) {
-                const el = document.querySelector('.glass-card.border-l-4');
-                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
-              🤖 AI Detection
-            </button>
-            <button onClick={() => setShowReport(!showReport)} className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors">
-              📋 Reports
-            </button>
-            <button 
-              onClick={() => setShowTestPanel(true)} 
-              className="feature-tag cursor-pointer hover:bg-cyan-500/20 transition-colors"
-            >
-              🧪 E2E Tests
-            </button>
-          </div>
-        </header>
+              <p className="text-2xl md:text-3xl font-bold text-white leading-snug">
+                Is that voice <span className="text-[#00ff88]">real</span>, or <span className="text-[#a855f7]">AI-generated</span>?
+              </p>
 
-        {/* Tab Navigation */}
-        <nav className="flex justify-center gap-3 mb-10">
-          {(['analyze', 'history', 'batch'] as TabType[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => {
-                setActiveTab(tab);
-                if (tab === 'history') setHistory(getScanHistory());
-              }}
-              className={`px-6 py-3 rounded-xl border font-medium text-sm transition-all ${
-                activeTab === tab 
-                  ? 'tab-active' 
-                  : 'border-white/10 text-gray-400 hover:text-white hover:border-white/20 bg-white/5 backdrop-blur-sm'
-              }`}
-            >
-              {tab === 'analyze' && '🔬 Analyze'}
-              {tab === 'history' && `🕒 History (${history.length})`}
-              {tab === 'batch' && '📦 Batch Compare'}
-            </button>
-          ))}
-        </nav>
+              <p className="text-gray-400 text-sm leading-relaxed max-w-lg">
+                Upload a voice recording and VoxForensics will extract acoustic features (MFCCs, pitch, spectral centroid, ZCR, chroma) and classify the clip using advanced machine learning algorithms.
+              </p>
 
-        {/* ANALYZE TAB */}
-        {activeTab === 'analyze' && (
-          <div className="fade-in space-y-6">
-            {/* Input Section */}
-            <div className="glass-card glass-card-interactive p-6 md:p-8">
-              <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-3">
-                <span className="text-2xl">🎙️</span>
-                <span>Scan a Voice Recording</span>
-              </h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {/* Microphone Recording */}
-                <div className="text-center p-5 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm hover:border-cyan-500/30 transition-all">
-                  <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 ${
-                    isRecording 
-                      ? 'bg-red-500/20 border-2 border-red-500 recording-active' 
-                      : 'bg-cyan-500/10 border-2 border-cyan-500/30'
-                  }`}>
-                    <span className="text-2xl">{isRecording ? '⏹️' : '🎙️'}</span>
+              <div className="flex flex-wrap gap-4">
+                <button onClick={handleSampleReal} className="bg-gradient-to-r from-emerald-500/20 to-emerald-500/5 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-semibold py-3 px-6 rounded-xl flex items-center gap-3 transition-all duration-300 hover:shadow-[0_0_20px_rgba(0,255,136,0.15)]">
+                  <i className="fa-solid fa-play text-xs"></i> Try sample: Real voice
+                </button>
+                <button onClick={handleSampleFake} className="bg-gradient-to-r from-purple-500/20 to-purple-500/5 border border-purple-500/40 hover:border-purple-400 text-purple-300 font-semibold py-3 px-6 rounded-xl flex items-center gap-3 transition-all duration-300 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]">
+                  <i className="fa-solid fa-robot text-xs"></i> Try sample: AI clone
+                </button>
+              </div>
+
+              <div className="pt-8 border-t border-[#1a2a4a]/50">
+                <p className="text-xs font-semibold tracking-widest text-gray-500 mb-4 uppercase">What you get in every scan</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="feature-card">
+                    <i className="fa-solid fa-shield-halved text-[#00ff88] text-lg mb-2"></i>
+                    <h4 className="text-sm font-semibold text-white mb-1">Real vs Fake Verdict</h4>
+                    <p className="text-[11px] text-gray-400 leading-relaxed">Probability score for both classes from the trained model.</p>
                   </div>
-                  <p className="text-sm text-gray-300 mb-1 font-medium">
-                    {isRecording ? `Recording... ${formatTime(recordingTime)}` : 'Microphone'}
-                  </p>
-                  {recordingStatus && !isRecording && (
-                    <p className="text-xs text-gray-500 mb-3">{recordingStatus}</p>
-                  )}
+                  <div className="feature-card">
+                    <i className="fa-solid fa-chart-simple text-[#00d4ff] text-lg mb-2"></i>
+                    <h4 className="text-sm font-semibold text-white mb-1">Feature Evidence</h4>
+                    <p className="text-[11px] text-gray-400 leading-relaxed">MFCC, pitch, spectral centroid, ZCR, chroma and more.</p>
+                  </div>
+                  <div className="feature-card">
+                    <i className="fa-solid fa-wave-square text-[#a855f7] text-lg mb-2"></i>
+                    <h4 className="text-sm font-semibold text-white mb-1">Visual Proof</h4>
+                    <p className="text-[11px] text-gray-400 leading-relaxed">Waveform, spectrogram, and model analysis.</p>
+                  </div>
+                  <div className="feature-card">
+                    <i className="fa-solid fa-brain text-yellow-500 text-lg mb-2"></i>
+                    <h4 className="text-sm font-semibold text-white mb-1">AI-Powered</h4>
+                    <p className="text-[11px] text-gray-400 leading-relaxed">Advanced deep learning for accurate detection.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Side */}
+            <div className="space-y-6 relative">
+              <div className="absolute -top-20 -right-20 w-96 h-96 bg-[#a855f7]/10 rounded-full blur-3xl pointer-events-none"></div>
+
+              {/* Upload Panel */}
+              <div className="glass-panel p-6 relative z-10">
+                <h3 className="text-base font-semibold text-white mb-4">Scan a Voice Recording</h3>
+                
+                <div
+                  ref={dropZoneRef}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-[#1a2a4a] hover:border-[#00d4ff]/50 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-colors duration-300 bg-[#050914]/30 mb-4 group"
+                >
+                  <input ref={fileInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFileUpload} />
+                  <div className="w-12 h-12 rounded-full bg-[#1a2a4a]/30 flex items-center justify-center mb-3 group-hover:bg-[#00d4ff]/10 transition">
+                    <i className="fa-solid fa-cloud-arrow-up text-xl text-gray-400 group-hover:text-[#00d4ff] transition"></i>
+                  </div>
+                  <p className="text-sm font-medium text-gray-300 mb-1">Drag & drop an audio file here</p>
+                  <p className="text-xs text-gray-500">or click to upload</p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
+                  <span className="px-3 py-1 rounded-full bg-[#1a2a4a]/50 text-[10px] font-semibold tracking-wider text-gray-400">.wav</span>
+                  <span className="px-3 py-1 rounded-full bg-[#1a2a4a]/50 text-[10px] font-semibold tracking-wider text-gray-400">.mp3</span>
+                  <span className="px-3 py-1 rounded-full bg-[#1a2a4a]/50 text-[10px] font-semibold tracking-wider text-gray-400">.m4a</span>
+                  <span className="px-3 py-1 rounded-full bg-[#1a2a4a]/50 text-[10px] font-semibold tracking-wider text-gray-400">.flac</span>
+                </div>
+                <p className="text-[11px] text-gray-500 text-center">Max size: 25 MB</p>
+
+                {audioFile && (
+                  <div className="mt-4 p-3 bg-[#00d4ff]/10 border border-[#00d4ff]/30 rounded-lg flex items-center justify-between">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <i className="fa-solid fa-file-audio text-[#00d4ff]"></i>
+                      <div className="truncate">
+                        <p className="text-xs font-semibold text-white truncate">{audioFile.name}</p>
+                        <p className="text-[10px] text-gray-400">{(audioFile.size / (1024 * 1024)).toFixed(2)} MB</p>
+                      </div>
+                    </div>
+                    <button onClick={() => { setAudioFile(null); setCurrentResult(null); }} className="text-gray-400 hover:text-white transition">
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Record Panel */}
+              <div className="glass-panel p-6 relative z-10">
+                <h3 className="text-base font-semibold text-white mb-4">Or Record from Your Microphone</h3>
+                
+                <div className="flex items-center gap-6 mb-4">
                   <button
                     onClick={isRecording ? stopRecording : startRecording}
-                    className={`neon-btn w-full text-sm ${isRecording ? 'neon-btn-danger' : ''}`}
+                    className={`w-14 h-14 rounded-full border-2 flex items-center justify-center transition-all duration-300 flex-shrink-0 ${
+                      isRecording
+                        ? 'recording-pulse border-red-500 text-red-500'
+                        : 'border-[#1a2a4a] text-gray-400 hover:text-white hover:border-[#a855f7]'
+                    }`}
                   >
-                    {isRecording ? '⏹ Stop & Analyze' : '🎙 Start Recording'}
+                    <i className={`fa-solid ${isRecording ? 'fa-stop' : 'fa-microphone'} text-xl`}></i>
                   </button>
+                  
+                  <div className="flex-1 h-12 flex items-center justify-center gap-1">
+                    {isRecording ? (
+                      <canvas ref={simulatedCanvasRef} className="w-full h-full" />
+                    ) : (
+                      <>
+                        {[2, 4, 6, 8, 6, 4, 2, 5, 7, 3, 6, 4].map((h, i) => (
+                          <div key={i} className="visualizer-bar" style={{ height: `${h * 4}px` }}></div>
+                        ))}
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                {/* File Upload */}
-                <div className="text-center p-5 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm hover:border-purple-500/30 transition-all">
-                  <div className="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 bg-purple-500/10 border-2 border-purple-500/30">
-                    <span className="text-2xl">📁</span>
-                  </div>
-                  <p className="text-sm text-gray-300 mb-3 font-medium">Upload Audio File</p>
-                  <input ref={fileInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFileUpload} />
-                  <button onClick={() => fileInputRef.current?.click()} className="neon-btn neon-btn-purple w-full text-sm">
-                    📁 Choose File
-                  </button>
-                </div>
+                <p className="text-[11px] text-gray-400 leading-relaxed mb-4">
+                  Speak a full sentence (2-5 seconds is ideal), then stop to analyze.
+                </p>
 
-                {/* Sample Audio */}
-                <div className="text-center p-5 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm hover:border-green-500/30 transition-all">
-                  <div className="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 bg-green-500/10 border-2 border-green-500/30">
-                    <span className="text-2xl">🧪</span>
-                  </div>
-                  <p className="text-sm text-gray-300 mb-3 font-medium">Try Sample Audio</p>
-                  <div className="flex gap-2">
-                    <button onClick={handleSampleReal} className="neon-btn neon-btn-success flex-1 text-xs py-2">
-                      ✅ Real
-                    </button>
-                    <button onClick={handleSampleFake} className="neon-btn neon-btn-danger flex-1 text-xs py-2">
-                      ❌ Fake
-                    </button>
-                  </div>
-                </div>
+                <button
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={`w-full font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 ${
+                    isRecording
+                      ? 'bg-gradient-to-r from-red-500/80 to-red-500/80 hover:from-red-500 hover:to-red-500 text-white'
+                      : 'bg-gradient-to-r from-[#a855f7]/80 to-[#00d4ff]/80 hover:from-[#a855f7] hover:to-[#00d4ff] text-white shadow-[0_0_15px_rgba(168,85,247,0.2)]'
+                  }`}
+                >
+                  <i className={`fa-solid ${isRecording ? 'fa-stop' : 'fa-circle'} text-xs`}></i>
+                  {isRecording ? `Stop Recording (${formatTime(recordingTime)})` : 'Start Recording'}
+                </button>
               </div>
 
-              {/* Security Scanner */}
-              {pendingFile && (
-                <div className="mt-6">
-                  <SecurityScanner 
-                    file={pendingFile} 
-                    onScanComplete={handleSecurityScanComplete}
-                  />
-                  {securityScanResult && !securityScanResult.isValid && (
-                    <div className="mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
-                      <p className="text-sm text-red-400 font-semibold mb-2">
-                        ⚠️ File cannot be processed due to security issues
-                      </p>
-                      <button
-                        onClick={() => {
-                          setPendingFile(null);
-                          setSecurityScanResult(null);
-                        }}
-                        className="neon-btn neon-btn-danger text-xs"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  )}
+              {/* Analysis Results */}
+              {isAnalyzing && (
+                <div className="glass-panel p-6 relative z-10 fade-in">
+                  <h3 className="text-base font-semibold text-white mb-4">Analysis Results</h3>
+                  <div className="flex flex-col items-center justify-center py-8">
+                    <div className="loader mb-4"></div>
+                    <p className="text-sm text-gray-400">Extracting features & classifying...</p>
+                  </div>
                 </div>
               )}
 
-              {/* Recording Waveform */}
-              {isRecording && (
-                <div className="mt-6 waveform-container">
-                  <canvas ref={simulatedCanvasRef} className="w-full h-28" />
-                  <div className="absolute bottom-2 left-3 text-xs font-mono" style={{ color: '#00F2FE' }}>
-                    {formatTime(recordingTime)} | {recordingStatus}
+              {currentResult && !isAnalyzing && (
+                <div className="glass-panel p-6 relative z-10 fade-in">
+                  <h3 className="text-base font-semibold text-white mb-4">Analysis Results</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-[#1a2a4a]/30 rounded-xl border border-[#1a2a4a]">
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Verdict</p>
+                        <p className={`text-2xl font-bold ${currentResult.isDeepfake ? 'text-[#a855f7]' : 'text-[#00ff88]'}`}>
+                          {currentResult.isDeepfake ? 'AI-Generated Voice' : 'Real Voice'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Confidence</p>
+                        <p className={`text-2xl font-bold ${currentResult.isDeepfake ? 'text-[#a855f7]' : 'text-[#00ff88]'}`}>
+                          {(currentResult.confidence * 100).toFixed(1)}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-[#050914]/50 p-2 rounded-lg text-center">
+                        <p className="text-[10px] text-gray-500 uppercase">MFCC</p>
+                        <p className="text-xs font-mono text-[#00d4ff]">{currentResult.features.mfccEnergy.toFixed(3)}</p>
+                      </div>
+                      <div className="bg-[#050914]/50 p-2 rounded-lg text-center">
+                        <p className="text-[10px] text-gray-500 uppercase">Pitch</p>
+                        <p className="text-xs font-mono text-[#00d4ff]">{currentResult.features.pitchVariability.toFixed(3)}</p>
+                      </div>
+                      <div className="bg-[#050914]/50 p-2 rounded-lg text-center">
+                        <p className="text-[10px] text-gray-500 uppercase">Centroid</p>
+                        <p className="text-xs font-mono text-[#00d4ff]">{(currentResult.features.spectralCentroid / 1000).toFixed(1)} kHz</p>
+                      </div>
+                      <div className="bg-[#050914]/50 p-2 rounded-lg text-center">
+                        <p className="text-[10px] text-gray-500 uppercase">ZCR</p>
+                        <p className="text-xs font-mono text-[#00d4ff]">{currentResult.features.zeroCrossingRate.toFixed(3)}</p>
+                      </div>
+                    </div>
+
+                    <div className="waveform-container">
+                      <canvas ref={canvasWaveformRef} className="w-full h-16" />
+                    </div>
+
+                    <button onClick={() => { setCurrentResult(null); setAudioFile(null); }} className="w-full text-xs text-[#00d4ff] hover:text-white transition underline">
+                      Scan another file
+                    </button>
                   </div>
                 </div>
               )}
             </div>
-
-            {/* Analyzing Indicator */}
-            {isAnalyzing && (
-              <div className="glass-card p-8 text-center fade-in">
-                <div className="relative inline-block mb-4">
-                  <div className="spinner w-12 h-12 mx-auto" style={{ borderWidth: '3px' }}></div>
-                </div>
-                <h3 className="text-xl font-bold text-white mb-2">Analyzing Audio...</h3>
-                <p className="text-gray-400 text-sm">Running VoxNet-v3.2.1-Ensemble model</p>
-                <div className="mt-4 flex justify-center gap-2 text-xs flex-wrap">
-                  <span className="px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">Extracting features</span>
-                  <span className="text-gray-600">→</span>
-                  <span className="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300">Computing spectrogram</span>
-                  <span className="text-gray-600">→</span>
-                  <span className="px-3 py-1 rounded-full bg-pink-500/10 border border-pink-500/20 text-pink-300">Running inference</span>
-                </div>
-              </div>
-            )}
-
-            {/* Results */}
-            {currentResult && !isAnalyzing && (
-              <div className="space-y-6 fade-in">
-                {/* Verdict */}
-                <div className={`glass-card p-6 md:p-8 border-l-4 ${
-                  currentResult.isDeepfake ? 'border-l-[#FF0055]' : 'border-l-[#00FF88]'
-                }`}>
-                  <div className="flex items-center justify-between flex-wrap gap-4">
-                    <div>
-                      <h3 className="text-2xl md:text-3xl font-bold" style={{ color: currentResult.isDeepfake ? '#FF0055' : '#00FF88' }}>
-                        {currentResult.isDeepfake ? '⚠️ DEEPFAKE DETECTED' : '✅ AUTHENTIC AUDIO'}
-                      </h3>
-                      <p className="text-gray-400 mt-2 text-sm">
-                        Model: {currentResult.modelVersion} | Confidence: {(currentResult.confidence * 100).toFixed(1)}%
-                      </p>
-                    </div>
-                    <div className="flex gap-3">
-                      <button onClick={() => setShowReport(!showReport)} className="neon-btn text-sm">
-                        📋 Report
-                      </button>
-                      <button onClick={generatePDF} className="neon-btn neon-btn-purple text-sm">
-                        📥 PDF
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Visualizations */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="glass-card p-5">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
-                      🌊 Waveform Analysis
-                    </h4>
-                    <div className="waveform-container">
-                      <canvas ref={canvasWaveformRef} className="w-full h-32" />
-                    </div>
-                  </div>
-                  <div className="glass-card p-5">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
-                      🔬 Mel-Spectrogram
-                    </h4>
-                    <div className="spectrogram-container">
-                      <canvas ref={canvasSpectrogramRef} className="w-full h-32" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Metrics */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Probabilities */}
-                  <div className="glass-card p-5">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
-                      📊 Classification Probabilities
-                    </h4>
-                    <div className="space-y-4">
-                      {[
-                        { label: 'Real', value: currentResult.probabilities.real, color: '#00FF88', gradient: 'linear-gradient(90deg, #00FF88, #00CC6A)' },
-                        { label: 'Deepfake', value: currentResult.probabilities.deepfake, color: '#FF0055', gradient: 'linear-gradient(90deg, #FF0055, #E100FF)' },
-                        { label: 'Manipulated', value: currentResult.probabilities.manipulated, color: '#FFD700', gradient: 'linear-gradient(90deg, #FFD700, #FF6600)' },
-                      ].map((item, i) => (
-                        <div key={i}>
-                          <div className="flex justify-between text-xs mb-1.5">
-                            <span style={{ color: item.color }}>{item.label}</span>
-                            <span style={{ color: item.color }}>{(item.value * 100).toFixed(1)}%</span>
-                          </div>
-                          <div className="progress-bar">
-                            <div className="progress-fill" style={{ width: `${item.value * 100}%`, background: item.gradient }}></div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Confidence Ring */}
-                  <div className="glass-card p-5 flex flex-col items-center justify-center">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
-                      🎯 Confidence
-                    </h4>
-                    <div className="confidence-ring">
-                      <svg width="140" height="140" viewBox="0 0 140 140">
-                        <circle cx="70" cy="70" r="58" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
-                        <circle
-                          cx="70" cy="70" r="58" fill="none"
-                          stroke={currentResult.isDeepfake ? '#FF0055' : '#00FF88'}
-                          strokeWidth="8"
-                          strokeDasharray={`${currentResult.confidence * 364} 364`}
-                          strokeLinecap="round"
-                          style={{ filter: `drop-shadow(0 0 8px ${currentResult.isDeepfake ? '#FF0055' : '#00FF88'})` }}
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-3xl font-bold" style={{ color: currentResult.isDeepfake ? '#FF0055' : '#00FF88' }}>
-                          {(currentResult.confidence * 100).toFixed(0)}%
-                        </span>
-                        <span className="text-xs text-gray-500 mt-1">±{(currentResult.uncertainty * 100).toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Acoustic Features */}
-                  <div className="glass-card p-5">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
-                      📈 Acoustic Features
-                    </h4>
-                    <div className="space-y-2.5 text-xs">
-                      {[
-                        { label: 'Spectral Centroid', value: currentResult.features.spectralCentroid.toFixed(0) + ' Hz' },
-                        { label: 'Pitch Variability', value: currentResult.features.pitchVariability.toFixed(4) },
-                        { label: 'Formant Stability', value: currentResult.features.formantStability.toFixed(4) },
-                        { label: 'Harmonic Ratio', value: currentResult.features.harmonicRatio.toFixed(4) },
-                        { label: 'Spectral Flatness', value: currentResult.features.spectralFlatness.toFixed(4) },
-                        { label: 'Temporal Modulation', value: currentResult.features.temporalModulation.toFixed(4) },
-                      ].map((f, i) => (
-                        <div key={i} className="flex justify-between items-center py-1.5 border-b border-white/5">
-                          <span className="text-gray-400">{f.label}</span>
-                          <span className="font-mono" style={{ color: '#00F2FE' }}>{f.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Model Explanation */}
-                <div className="glass-card p-6">
-                  <h4 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
-                    🧠 Model Explanation (XAI)
-                  </h4>
-                  <div className="space-y-2">
-                    {currentResult.explanation.map((line, i) => (
-                      <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/5 text-sm text-gray-300">
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Full Report */}
-                {showReport && (
-                  <div className="glass-card p-6 fade-in">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
-                      📋 Forensic Report
-                    </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                      {[
-                        { label: 'File', value: audioFile?.name || 'N/A' },
-                        { label: 'Duration', value: `${currentResult.audioDuration.toFixed(2)}s` },
-                        { label: 'Sample Rate', value: `${currentResult.sampleRate} Hz` },
-                        { label: 'Model', value: currentResult.modelVersion },
-                        { label: 'Timestamp', value: new Date(currentResult.timestamp).toLocaleString() },
-                        { label: 'Verdict', value: currentResult.isDeepfake ? 'Deepfake' : 'Authentic', color: currentResult.isDeepfake ? '#FF0055' : '#00FF88' },
-                        { label: 'Confidence', value: `${(currentResult.confidence * 100).toFixed(1)}%`, color: '#00F2FE' },
-                        { label: 'Report ID', value: `VF-${Date.now().toString(36).toUpperCase()}` },
-                      ].map((item, i) => (
-                        <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/5">
-                          <p className="text-gray-500 text-xs mb-1">{item.label}</p>
-                          <p className="text-white truncate text-xs" style={item.color ? { color: item.color } : {}}>
-                            {item.value}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Empty State */}
-            {!currentResult && !isAnalyzing && !isRecording && (
-              <div className="glass-card p-12 text-center">
-                <div className="text-6xl mb-4">🔬</div>
-                <h3 className="text-xl font-bold text-white mb-2">Ready to Analyze</h3>
-                <p className="text-gray-400 max-w-md mx-auto text-sm">
-                  Record audio from your microphone, upload an audio file, or try our sample real/fake audio clips to see VoxForensics in action.
-                </p>
-                <div className="mt-6 flex justify-center gap-3 flex-wrap">
-                  <button onClick={startRecording} className="neon-btn">🎙 Start Recording</button>
-                  <button onClick={handleSampleReal} className="neon-btn neon-btn-success">✅ Try Real Sample</button>
-                  <button onClick={handleSampleFake} className="neon-btn neon-btn-danger">❌ Try Fake Sample</button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {/* HISTORY TAB */}
-        {activeTab === 'history' && (
-          <div className="fade-in space-y-4">
-            <div className="glass-card p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">🕒 Scan History</h2>
-                {history.length > 0 && (
-                  <button onClick={() => { clearHistory(); setHistory([]); }} className="neon-btn neon-btn-danger text-xs">
-                    🗑 Clear All
-                  </button>
-                )}
-              </div>
-              {history.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <div className="text-4xl mb-3">📭</div>
-                  <p className="text-sm">No scans yet. Analyze some audio to build your history.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {history.map((record) => (
-                    <div key={record.id} className="batch-item flex items-center justify-between flex-wrap gap-3">
-                      <div className="flex items-center gap-3 flex-1">
-                        <span className={`w-3 h-3 rounded-full ${record.result.isDeepfake ? 'bg-[#FF0055]' : 'bg-[#00FF88]'}`}
-                          style={{ boxShadow: `0 0 8px ${record.result.isDeepfake ? '#FF0055' : '#00FF88'}` }}></span>
-                        <div>
-                          <p className="text-white text-sm font-medium">{record.filename}</p>
-                          <p className="text-gray-500 text-xs">{new Date(record.timestamp).toLocaleString()}</p>
+        {activeTab === 'scanner' && (
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-3xl font-bold text-white mb-6">Advanced Scanner</h2>
+            <div className="glass-panel p-6">
+              <p className="text-gray-400 mb-4">Upload audio files for detailed analysis with waveform and spectrogram visualization.</p>
+              <input ref={fileInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFileUpload} />
+              <button onClick={() => fileInputRef.current?.click()} className="neon-btn neon-btn-primary">
+                <i className="fa-solid fa-upload mr-2"></i> Upload Audio
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'batch' && (
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-3xl font-bold text-white mb-6">Batch Comparison</h2>
+            <div className="glass-panel p-6">
+              <p className="text-gray-400 mb-4">Upload multiple audio files to compare their analysis results side by side.</p>
+              <input ref={batchInputRef} type="file" accept="audio/*" multiple className="hidden" onChange={handleBatchUpload} />
+              <button onClick={() => batchInputRef.current?.click()} className="neon-btn neon-btn-primary">
+                <i className="fa-solid fa-layer-group mr-2"></i> Select Multiple Files
+              </button>
+
+              {batchResults.length > 0 && (
+                <div className="mt-6 space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-300">Results ({batchResults.length} files)</h3>
+                  {batchResults.map((item, i) => (
+                    <div key={i} className="batch-item">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-3 h-3 rounded-full ${item.result.isDeepfake ? 'bg-[#a855f7]' : 'bg-[#00ff88]'}`}></span>
+                          <span className="text-white text-sm truncate max-w-[200px]">{item.filename}</span>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs">
-                        <span className="text-gray-400">{record.duration.toFixed(1)}s</span>
-                        <span style={{ color: record.result.isDeepfake ? '#FF0055' : '#00FF88' }}>
-                          {(record.result.confidence * 100).toFixed(0)}% {record.result.isDeepfake ? 'Fake' : 'Real'}
+                        <span className={`text-xs font-bold ${item.result.isDeepfake ? 'text-[#a855f7]' : 'text-[#00ff88]'}`}>
+                          {(item.result.confidence * 100).toFixed(0)}%
                         </span>
-                        <button
-                          onClick={() => {
-                            const newHistory = history.filter(h => h.id !== record.id);
-                            setHistory(newHistory);
-                            localStorage.setItem('voxforensics_history', JSON.stringify(newHistory));
-                          }}
-                          className="ml-2 px-2 py-1 rounded text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
-                        >
-                          🗑️ Delete
-                        </button>
                       </div>
                     </div>
                   ))}
@@ -1107,127 +610,112 @@ export default function App() {
           </div>
         )}
 
-        {/* BATCH TAB */}
-        {activeTab === 'batch' && (
-          <div className="fade-in space-y-6">
-            <div className="glass-card p-6">
-              <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">📦 Batch Comparison</h2>
-              <p className="text-gray-400 text-sm mb-4">Upload multiple audio files to compare their analysis results side by side.</p>
-              <input ref={batchInputRef} type="file" accept="audio/*" multiple className="hidden" onChange={handleBatchUpload} />
-              <button onClick={() => batchInputRef.current?.click()} className="neon-btn">📁 Select Multiple Files</button>
-
-              {batchResults.length > 0 && (
-                <div className="mt-6 space-y-3">
-                  <h3 className="text-sm font-semibold text-gray-300">Results ({batchResults.length} files)</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {batchResults.map((item, i) => (
-                      <div key={i} className="batch-item">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-3 h-3 rounded-full ${item.result.isDeepfake ? 'bg-[#FF0055]' : 'bg-[#00FF88]'}`}></span>
-                            <span className="text-white text-sm truncate max-w-[200px]">{item.filename}</span>
-                          </div>
-                          <span className="text-xs font-bold" style={{ color: item.result.isDeepfake ? '#FF0055' : '#00FF88' }}>
-                            {(item.result.confidence * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="mt-2 flex gap-3 text-xs">
-                          <span style={{ color: '#00FF88' }}>R:{(item.result.probabilities.real * 100).toFixed(0)}%</span>
-                          <span style={{ color: '#FF0055' }}>DF:{(item.result.probabilities.deepfake * 100).toFixed(0)}%</span>
-                          <span style={{ color: '#FFD700' }}>M:{(item.result.probabilities.manipulated * 100).toFixed(0)}%</span>
-                        </div>
-                        <div className="mt-2 progress-bar">
-                          <div className="progress-fill" style={{ 
-                            width: `${item.result.confidence * 100}%`,
-                            background: item.result.isDeepfake ? 'linear-gradient(90deg, #FF0055, #E100FF)' : 'linear-gradient(90deg, #00FF88, #00F2FE)'
-                          }}></div>
+        {activeTab === 'history' && (
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-3xl font-bold text-white mb-6">Scan History</h2>
+            <div className="glass-panel p-6">
+              {history.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">No scans yet. Start analyzing audio files!</p>
+              ) : (
+                <div className="space-y-3">
+                  {history.map((record) => (
+                    <div key={record.id} className="batch-item flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className={`w-3 h-3 rounded-full ${record.result.isDeepfake ? 'bg-[#a855f7]' : 'bg-[#00ff88]'}`}></span>
+                        <div>
+                          <p className="text-white text-sm font-medium">{record.filename}</p>
+                          <p className="text-gray-500 text-xs">{new Date(record.timestamp).toLocaleString()}</p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 p-4 rounded-2xl bg-white/5 border border-white/5">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-3">Batch Summary</h4>
-                    <div className="grid grid-cols-3 gap-4 text-center">
-                      <div>
-                        <p className="text-2xl font-bold text-white">{batchResults.length}</p>
-                        <p className="text-xs text-gray-500">Total Scans</p>
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold" style={{ color: '#FF0055' }}>{batchResults.filter(b => b.result.isDeepfake).length}</p>
-                        <p className="text-xs text-gray-500">Deepfakes</p>
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold" style={{ color: '#00FF88' }}>{batchResults.filter(b => !b.result.isDeepfake).length}</p>
-                        <p className="text-xs text-gray-500">Authentic</p>
+                      <div className="flex items-center gap-4">
+                        <span className="text-gray-400 text-xs">{record.duration.toFixed(1)}s</span>
+                        <span className={`text-xs font-bold ${record.result.isDeepfake ? 'text-[#a855f7]' : 'text-[#00ff88]'}`}>
+                          {(record.result.confidence * 100).toFixed(0)}%
+                        </span>
+                        <button
+                          onClick={() => {
+                            const newHistory = history.filter(h => h.id !== record.id);
+                            setHistory(newHistory);
+                            localStorage.setItem('voxforensics_history', JSON.stringify(newHistory));
+                          }}
+                          className="text-gray-400 hover:text-red-400 transition"
+                        >
+                          <i className="fa-solid fa-trash text-xs"></i>
+                        </button>
                       </div>
                     </div>
-                  </div>
+                  ))}
+                  <button
+                    onClick={() => { clearHistory(); setHistory([]); }}
+                    className="neon-btn neon-btn-danger w-full mt-4"
+                  >
+                    <i className="fa-solid fa-trash mr-2"></i> Clear All History
+                  </button>
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* Privacy & Security Info */}
-        <div className="mt-12 glass-card p-6">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            🔒 Privacy & Security Information
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-              <p className="font-semibold text-cyan-300 mb-2">📦 Data Storage</p>
-              <ul className="text-xs text-gray-400 space-y-1">
-                <li>• All processing occurs in your browser</li>
-                <li>• No files are uploaded to servers</li>
-                <li>• Analysis history stored in localStorage</li>
-                <li>• Data never leaves your device</li>
-              </ul>
-            </div>
-            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-              <p className="font-semibold text-green-300 mb-2">🛡️ Security</p>
-              <ul className="text-xs text-gray-400 space-y-1">
-                <li>• Files scanned for malware before processing</li>
-                <li>• File type and size validation</li>
-                <li>• Signature verification for audio files</li>
-                <li>• No external network requests</li>
-              </ul>
+        {activeTab === 'about' && (
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-3xl font-bold text-white mb-6">About VoxForensics</h2>
+            <div className="glass-panel p-6 space-y-4">
+              <p className="text-gray-300 leading-relaxed">
+                VoxForensics is an advanced AI-powered deepfake audio detection system designed to help identify synthetic voice content. 
+                Using state-of-the-art machine learning algorithms, we analyze acoustic features to determine whether audio is authentic or AI-generated.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                <div className="feature-card">
+                  <i className="fa-solid fa-shield-halved text-[#00ff88] text-2xl mb-3"></i>
+                  <h3 className="text-lg font-semibold text-white mb-2">Privacy First</h3>
+                  <p className="text-sm text-gray-400">All processing happens in your browser. No data is sent to external servers.</p>
+                </div>
+                <div className="feature-card">
+                  <i className="fa-solid fa-brain text-[#a855f7] text-2xl mb-3"></i>
+                  <h3 className="text-lg font-semibold text-white mb-2">AI-Powered</h3>
+                  <p className="text-sm text-gray-400">Advanced deep learning models trained on thousands of real and synthetic voice samples.</p>
+                </div>
+              </div>
+              <button onClick={() => setShowTestPanel(true)} className="neon-btn neon-btn-outline mt-4">
+                <i className="fa-solid fa-flask mr-2"></i> Run E2E Tests
+              </button>
             </div>
           </div>
-          <div className="mt-4 flex gap-3">
-            <button
-              onClick={() => {
-                if (confirm('Are you sure you want to revoke consent? This will clear all your data and require you to accept the consent agreement again.')) {
-                  revokeConsent();
-                  clearHistory();
-                  setHistory([]);
-                  setHasConsent(false);
-                }
-              }}
-              className="neon-btn neon-btn-danger text-xs"
-            >
-              🔐 Revoke Consent & Clear Data
-            </button>
-            <button
-              onClick={() => {
-                alert(`📊 Storage Usage:\n\n• Analysis History: ${(JSON.stringify(history).length / 1024).toFixed(2)} KB\n• Consent Data: ${(localStorage.getItem('voxforensics_consent')?.length || 0) / 1024} KB\n• Total localStorage: ${(Object.values(localStorage).join('').length / 1024).toFixed(2)} KB\n\n📁 Uploaded Files: Not stored (processed in-memory only)\n🎙️ Recordings: Not stored (processed immediately)\n\nAll data is stored locally in your browser and never transmitted to external servers.`);
-              }}
-              className="neon-btn text-xs"
-            >
-              📊 View Storage Details
-            </button>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-[#1a2a4a]/50 bg-[#050914]/80 py-6 mt-12">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-gray-500">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-white">VoxForensics</span>
+            <span>|</span>
+            <span>AI Voice Deepfake Detection</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span>Research</span>
+            <span>•</span>
+            <span>Learn</span>
+            <span>•</span>
+            <span>Build</span>
+            <span>•</span>
+            <span>A Safer Digital Tomorrow</span>
           </div>
         </div>
+      </footer>
 
-        {/* Footer */}
-        <footer className="mt-8 text-center pb-8">
-          <p className="text-gray-500 text-sm">VoxForensics v3.2.1 — AI Deepfake Audio Detection System</p>
-          <p className="mt-1 text-xs text-gray-700">Powered by VoxNet Ensemble Model | GDPR & BIPA Compliant | Client-Side Processing Only</p>
-        </footer>
-      </div>
-
-      {/* E2E Test Panel */}
       {showTestPanel && <E2ETestPanel onClose={() => setShowTestPanel(false)} />}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ConsentProvider>
+        <AppContent />
+      </ConsentProvider>
+    </AuthProvider>
   );
 }

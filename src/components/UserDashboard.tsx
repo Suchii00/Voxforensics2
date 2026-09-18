@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { User } from './AuthSystem';
 
-export default function UserDashboard({ currentUser, onLogout, onBackToApp }: { 
+export default function UserDashboard({ currentUser, onLogout, onBack }: { 
   currentUser: User; 
   onLogout: () => void;
-  onBackToApp: () => void;
+  onBack: () => void;
 }) {
   const [scanHistory, setScanHistory] = useState<any[]>([]);
   const [referrals, setReferrals] = useState<any[]>([]);
@@ -34,7 +34,7 @@ export default function UserDashboard({ currentUser, onLogout, onBackToApp }: {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={onBackToApp} className="neon-btn text-xs py-2 px-4">
+            <button onClick={onBack} className="neon-btn text-xs py-2 px-4">
               🔬 Back to App
             </button>
             <button onClick={onLogout} className="neon-btn neon-btn-danger text-xs py-2 px-4">
