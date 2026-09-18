@@ -238,153 +238,149 @@ function analyzeFeatures(features: AcousticFeatures): { isDeepfake: boolean; con
   let realScore = 0;
 
   // 1. Pitch variability - AI voices have MUCH less natural variation
-  // Real human speech: 0.25-0.50, AI voices: 0.05-0.18
-  if (features.pitchVariability < 0.08) {
+  // Real human speech: 0.15-0.60, AI voices: 0.02-0.12
+  // RELAXED: Many real voices (calm speakers, monotone) can have 0.15-0.25
+  if (features.pitchVariability < 0.05) {
     deepfakeScore += 4.0; // Very strong indicator
-  } else if (features.pitchVariability < 0.12) {
+  } else if (features.pitchVariability < 0.08) {
     deepfakeScore += 3.0;
-  } else if (features.pitchVariability < 0.16) {
+  } else if (features.pitchVariability < 0.12) {
     deepfakeScore += 2.0;
-  } else if (features.pitchVariability < 0.20) {
-    deepfakeScore += 1.0;
-  } else if (features.pitchVariability > 0.30) {
+  } else if (features.pitchVariability > 0.25) {
     realScore += 2.5; // Very natural variation
-  } else if (features.pitchVariability > 0.22) {
+  } else if (features.pitchVariability > 0.18) {
     realScore += 1.5;
   }
 
   // 2. Formant stability - AI voices are unnaturally stable
-  // Real speech: 0.55-0.75, AI voices: 0.85-0.98
-  if (features.formantStability > 0.92) {
+  // Real speech: 0.45-0.85, AI voices: 0.88-0.99
+  // RELAXED: Professional speakers can have 0.75-0.85 stability
+  if (features.formantStability > 0.95) {
     deepfakeScore += 3.5;
-  } else if (features.formantStability > 0.87) {
+  } else if (features.formantStability > 0.90) {
     deepfakeScore += 2.5;
-  } else if (features.formantStability > 0.82) {
+  } else if (features.formantStability > 0.85) {
     deepfakeScore += 1.5;
-  } else if (features.formantStability > 0.78) {
-    deepfakeScore += 0.8;
-  } else if (features.formantStability < 0.65) {
+  } else if (features.formantStability < 0.60) {
     realScore += 2.5;
-  } else if (features.formantStability < 0.72) {
+  } else if (features.formantStability < 0.70) {
     realScore += 1.5;
   }
 
   // 3. Spectral flatness - AI voices have higher flatness due to vocoder artifacts
-  // Real speech: 0.02-0.05, AI voices: 0.06-0.15
-  if (features.spectralFlatness > 0.12) {
+  // Real speech: 0.01-0.08, AI voices: 0.08-0.20
+  // RELAXED: Real recordings with noise/room acoustics can have 0.05-0.10
+  if (features.spectralFlatness > 0.15) {
     deepfakeScore += 3.5;
-  } else if (features.spectralFlatness > 0.09) {
+  } else if (features.spectralFlatness > 0.12) {
     deepfakeScore += 2.5;
-  } else if (features.spectralFlatness > 0.07) {
-    deepfakeScore += 1.8;
-  } else if (features.spectralFlatness > 0.055) {
-    deepfakeScore += 1.0;
-  } else if (features.spectralFlatness < 0.035) {
+  } else if (features.spectralFlatness > 0.09) {
+    deepfakeScore += 1.5;
+  } else if (features.spectralFlatness < 0.03) {
     realScore += 2.5;
-  } else if (features.spectralFlatness < 0.045) {
+  } else if (features.spectralFlatness < 0.05) {
     realScore += 1.5;
   }
 
   // 4. Harmonic ratio - AI voices have lower/distorted harmonic content
-  // Real speech: 0.75-0.92, AI voices: 0.50-0.72
-  if (features.harmonicRatio < 0.58) {
+  // Real speech: 0.65-0.95, AI voices: 0.40-0.68
+  // RELAXED: Breathy voices can have 0.65-0.75 harmonic ratio
+  if (features.harmonicRatio < 0.50) {
     deepfakeScore += 3.5;
-  } else if (features.harmonicRatio < 0.65) {
+  } else if (features.harmonicRatio < 0.58) {
     deepfakeScore += 2.5;
-  } else if (features.harmonicRatio < 0.70) {
+  } else if (features.harmonicRatio < 0.65) {
     deepfakeScore += 1.5;
-  } else if (features.harmonicRatio < 0.74) {
-    deepfakeScore += 0.8;
-  } else if (features.harmonicRatio > 0.82) {
+  } else if (features.harmonicRatio > 0.80) {
     realScore += 2.5;
-  } else if (features.harmonicRatio > 0.76) {
+  } else if (features.harmonicRatio > 0.72) {
     realScore += 1.5;
   }
 
   // 5. Temporal modulation - AI voices lack natural breathing and micro-pauses
-  // Real speech: 0.50-0.85, AI voices: 0.20-0.45
-  if (features.temporalModulation < 0.28) {
+  // Real speech: 0.35-0.95, AI voices: 0.15-0.40
+  // RELAXED: Steady speakers can have 0.35-0.50 modulation
+  if (features.temporalModulation < 0.20) {
     deepfakeScore += 3.5;
-  } else if (features.temporalModulation < 0.35) {
+  } else if (features.temporalModulation < 0.28) {
     deepfakeScore += 2.5;
-  } else if (features.temporalModulation < 0.42) {
+  } else if (features.temporalModulation < 0.35) {
     deepfakeScore += 1.5;
-  } else if (features.temporalModulation < 0.48) {
-    deepfakeScore += 0.8;
-  } else if (features.temporalModulation > 0.65) {
+  } else if (features.temporalModulation > 0.60) {
     realScore += 2.5;
-  } else if (features.temporalModulation > 0.55) {
+  } else if (features.temporalModulation > 0.45) {
     realScore += 1.5;
   }
 
   // 6. Zero crossing rate - AI voices can have abnormal ZCR patterns
-  if (features.zeroCrossingRate > 0.07) {
+  // RELAXED: Real recordings with noise can have higher ZCR
+  if (features.zeroCrossingRate > 0.10) {
     deepfakeScore += 2.0;
-  } else if (features.zeroCrossingRate > 0.055) {
+  } else if (features.zeroCrossingRate > 0.08) {
     deepfakeScore += 1.2;
-  } else if (features.zeroCrossingRate > 0.045) {
-    deepfakeScore += 0.6;
-  } else if (features.zeroCrossingRate < 0.025) {
+  } else if (features.zeroCrossingRate < 0.02) {
     realScore += 1.5;
   }
 
   // 7. Spectral centroid - AI voices often have unnatural spectral balance
-  if (features.spectralCentroid > 3200 || features.spectralCentroid < 1600) {
+  // RELAXED: Wider range for real voices
+  if (features.spectralCentroid > 3500 || features.spectralCentroid < 1400) {
     deepfakeScore += 1.5;
-  } else if (features.spectralCentroid > 2800 || features.spectralCentroid < 1800) {
+  } else if (features.spectralCentroid > 3000 || features.spectralCentroid < 1600) {
     deepfakeScore += 0.8;
   }
 
   // 8. Cross-feature consistency check - CRITICAL FOR MIXED AUDIO DETECTION
-  // Count how many features indicate deepfake
+  // Count how many features STRONGLY indicate deepfake (using stricter thresholds)
   const deepfakeIndicators = [
-    features.pitchVariability < 0.18,
-    features.formantStability > 0.80,
-    features.spectralFlatness > 0.06,
-    features.harmonicRatio < 0.72,
-    features.temporalModulation < 0.45,
-    features.zeroCrossingRate > 0.05,
+    features.pitchVariability < 0.10,
+    features.formantStability > 0.88,
+    features.spectralFlatness > 0.10,
+    features.harmonicRatio < 0.60,
+    features.temporalModulation < 0.30,
+    features.zeroCrossingRate > 0.08,
   ].filter(Boolean).length;
 
-  // If 4+ features indicate deepfake, it's almost certainly AI
+  // If 5+ features strongly indicate deepfake, it's almost certainly AI
   if (deepfakeIndicators >= 5) {
     deepfakeScore += 4.0; // Very strong multi-feature confirmation
   } else if (deepfakeIndicators >= 4) {
-    deepfakeScore += 2.5;
-  } else if (deepfakeIndicators >= 3) {
-    deepfakeScore += 1.5;
+    deepfakeScore += 2.0;
   }
 
-  // Count real indicators
+  // Count real indicators (using relaxed thresholds)
   const realIndicators = [
-    features.pitchVariability > 0.25,
-    features.formantStability < 0.72,
-    features.spectralFlatness < 0.045,
-    features.harmonicRatio > 0.78,
-    features.temporalModulation > 0.55,
-    features.zeroCrossingRate < 0.035,
+    features.pitchVariability > 0.20,
+    features.formantStability < 0.75,
+    features.spectralFlatness < 0.06,
+    features.harmonicRatio > 0.75,
+    features.temporalModulation > 0.50,
+    features.zeroCrossingRate < 0.05,
   ].filter(Boolean).length;
 
   if (realIndicators >= 5) {
     realScore += 3.5;
   } else if (realIndicators >= 4) {
     realScore += 2.0;
+  } else if (realIndicators >= 3) {
+    realScore += 1.0;
   }
 
-  // Calculate final verdict with LOWER threshold for deepfake detection
+  // Calculate final verdict with HIGHER threshold to reduce false positives
   const totalScore = deepfakeScore + realScore;
   const deepfakeRatio = totalScore > 0 ? deepfakeScore / totalScore : 0.5;
   
-  // More aggressive: if deepfakeScore > 3 OR ratio > 0.40, mark as deepfake
-  const isDeepfake = deepfakeScore > 3.5 || deepfakeRatio > 0.42;
+  // RELAXED: Require stronger evidence to classify as deepfake
+  // This reduces false positives for real voices
+  const isDeepfake = deepfakeScore > 5.0 || deepfakeRatio > 0.55;
   
   // Confidence calculation
   let confidence: number;
   if (isDeepfake) {
-    if (deepfakeScore > 10) confidence = 0.96;
-    else if (deepfakeScore > 7) confidence = 0.92;
-    else if (deepfakeScore > 5) confidence = 0.86;
-    else if (deepfakeScore > 3.5) confidence = 0.78;
+    if (deepfakeScore > 12) confidence = 0.96;
+    else if (deepfakeScore > 9) confidence = 0.92;
+    else if (deepfakeScore > 7) confidence = 0.86;
+    else if (deepfakeScore > 5) confidence = 0.78;
     else confidence = 0.68;
   } else {
     if (realScore > 8) confidence = 0.94;

@@ -7,6 +7,7 @@ import AdminDashboard from './components/AdminDashboard';
 import UserDashboard from './components/UserDashboard';
 import E2ETestPanel from './components/E2ETestPanel';
 import LiveBackground from './components/LiveBackground';
+import TestPanel from './components/TestPanel';
 
 type TabType = 'home' | 'scanner' | 'batch' | 'history' | 'about';
 
@@ -772,7 +773,7 @@ function AppContent() {
         )}
 
         {activeTab === 'about' && (
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-4xl mx-auto space-y-6">
             <h2 className="text-3xl font-bold text-white mb-6">About VoxForensics</h2>
             <div className="glass-panel p-6 space-y-4">
               <p className="text-gray-300 leading-relaxed">
@@ -795,6 +796,9 @@ function AppContent() {
                 <i className="fa-solid fa-flask mr-2"></i> Run E2E Tests
               </button>
             </div>
+
+            {/* Voice Detection Test Suite */}
+            <TestPanel />
           </div>
         )}
       </main>
